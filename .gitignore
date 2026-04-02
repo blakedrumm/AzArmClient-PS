@@ -1,0 +1,26 @@
+# Build output
+dist/
+*.zip
+
+# PowerShell module cache
+PSModuleCache/
+
+# Log files
+*.log
+logs/
+
+# Editor artifacts
+.vscode/
+*.suo
+*.user
+.idea/
+
+# OS artifacts
+Thumbs.db
+.DS_Store
+
+# Sensitive / credential files
+*.pfx
+*.pem
+*.key
+secrets.json
