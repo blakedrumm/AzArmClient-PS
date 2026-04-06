@@ -8,6 +8,10 @@ PSModuleCache/
 # Log files
 *.log
 logs/
+Logs/
+
+# Runtime output
+Output/
 
 # Editor artifacts
 .vscode/

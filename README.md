@@ -1,222 +1,109 @@
-# AzArmClient-PS
+# ArmClient-PS
 
-Secure PowerShell-based Azure Resource Manager REST client with bundled modules,
-integrity validation, and support for Azure public and sovereign clouds.
+ArmClient-PS is a single-script Azure Resource Manager support tool designed for redistribution.
+It recreates the core ARMClient workflow by using `Invoke-AzRestMethod` and a locally bundled `Modules` folder instead of requiring runtime installation from the PowerShell Gallery.
 
-## Features
+## Goals
 
-| Feature | Details |
-|---|---|
-| **Authentication** | Service Principal (secret or cert), Managed Identity, Interactive device-code |
-| **Sovereign clouds** | AzureCloud, AzureChinaCloud, AzureUSGovernment |
-| **HTTP verbs** | GET · POST · PUT · PATCH · DELETE |
-| **LRO polling** | Azure-AsyncOperation and Location header patterns |
-| **Retry logic** | Exponential back-off for 408/429/5xx transient errors |
-| **Integrity check** | SHA-256 manifest verifies every module before import |
-| **Structured logging** | Colour-coded levels (DEBUG/INFO/WARN/ERROR), optional log file |
-| **Build script** | Pins and bundles exact Az module versions; generates zip archive |
+- Ship as a zip-friendly support package.
+- Prefer secure, process-scoped authentication behavior.
+- Validate packaged files before use.
+- Support ARM GET, POST, PUT, PATCH, and DELETE operations.
+- Allow newer valid locally installed modules when they are safer or more current than the bundled version.
 
----
+## Package Layout
 
-## Quick start
+```text
+.
+├── ArmClient-PS.ps1
+├── Build-BundledModules.ps1
+├── Modules\
+├── Manifest\
+│   ├── Files.sha256.json
+│   └── Versions.json
+├── Logs\
+└── Output\
+```
+
+## Runtime Usage
+
+Show context:
 
 ```powershell
-# 1. Dot-source the main script (loads all modules)
-. .\AzArmClient.ps1
-
-# 2. Authenticate (choose one method below)
-
-# -- Interactive (requires Az.Accounts) --
-Connect-AzArm
-
-# -- Service principal with client secret --
-$secret = Read-Host 'Client secret' -AsSecureString
-Connect-AzArm -TenantId '<tenantId>' -ClientId '<appId>' -ClientSecret $secret
-
-# -- Service principal with certificate (cert-store lookup) --
-Connect-AzArm -TenantId '<tenantId>' -ClientId '<appId>' `
-              -CertificateThumbprint '<thumbprint>'
-
-# -- Managed Identity (system-assigned, e.g. on an Azure VM) --
-Connect-AzArm
-
-# 3. Call ARM
-$resp = Invoke-ArmGet `
-            -ResourcePath '/subscriptions/<subId>/resourceGroups' `
-            -ApiVersion   '2021-04-01'
-$resp.Body.value.name
-
-# 4. Create or update a resource and wait for LRO completion
-$body = @{ location = 'eastus'; properties = @{} }
-$result = Invoke-ArmPut `
-              -ResourcePath '/subscriptions/<subId>/resourceGroups/myRG/providers/...' `
-              -ApiVersion   '2023-07-01' `
-              -Body         $body `
-              -WaitForCompletion
+.\ArmClient-PS.ps1 -ShowContext
 ```
 
----
-
-## Public API
-
-### Authentication
-
-| Function | Description |
-|---|---|
-| `Connect-AzArm` | Authenticates and stores the session context |
-| `Get-AzArmContext` | Returns current context metadata (no token) |
-| `Disconnect-AzArm` | Clears the cached context / token |
-
-#### `Connect-AzArm` parameter sets
-
-```
-# Service principal – client secret
-Connect-AzArm -TenantId <string> -ClientId <string> -ClientSecret <securestring>
-              [-SubscriptionId <string>] [-Environment <cloud>]
-
-# Service principal – certificate object
-Connect-AzArm -TenantId <string> -ClientId <string> -Certificate <X509Certificate2>
-              [-SubscriptionId <string>] [-Environment <cloud>]
-
-# Service principal – certificate thumbprint (resolved from cert store)
-Connect-AzArm -TenantId <string> -ClientId <string> -CertificateThumbprint <string>
-              [-SubscriptionId <string>] [-Environment <cloud>]
-
-# Managed Identity
-Connect-AzArm [-MsiClientId <string>] [-SubscriptionId <string>] [-Environment <cloud>]
-
-# Interactive (requires Az.Accounts)
-Connect-AzArm [-TenantIdInteractive <string>] [-SubscriptionId <string>] [-Environment <cloud>]
-```
-
-### HTTP verbs
-
-All functions return a `PSCustomObject` with `StatusCode`, `Headers`, `Body`,
-and `RawContent`.
-
-| Function | Mandatory params | Notes |
-|---|---|---|
-| `Invoke-ArmGet` | `ResourcePath`, `ApiVersion` | Read-only; no body |
-| `Invoke-ArmPost` | `ResourcePath`, `ApiVersion` | `Body` optional |
-| `Invoke-ArmPut` | `ResourcePath`, `ApiVersion`, `Body` | Idempotent create/replace |
-| `Invoke-ArmPatch` | `ResourcePath`, `ApiVersion`, `Body` | Partial update |
-| `Invoke-ArmDelete` | `ResourcePath`, `ApiVersion` | No body |
-| `Invoke-ArmRequest` | `Method`, `ResourcePath`, `ApiVersion` | Generic wrapper |
-
-Common optional parameters on all verbs:
-
-| Parameter | Default | Description |
-|---|---|---|
-| `-WaitForCompletion` | `$false` | Poll LRO until terminal state |
-| `-LroTimeoutSec` | `7200` | Max poll time |
-| `-MaxRetries` | `3` | Retry count for transient errors |
-| `-QueryParams` | `@{}` | Extra query-string parameters |
-| `-AdditionalHeaders` | `@{}` | Extra request headers |
-
-### Long-running operations
+Run a GET request:
 
 ```powershell
-# Automatic (preferred) – pass -WaitForCompletion to any mutating verb
-$vm = Invoke-ArmPut -ResourcePath $vmPath -ApiVersion $api -Body $vmDef -WaitForCompletion
-
-# Manual – poll a response you already have
-$result = Watch-ArmOperation -InitialResponse $resp -GetToken { Get-AzArmToken }
+.\ArmClient-PS.ps1 `
+  -Method GET `
+  -RelativePath "/subscriptions/<subscriptionId>/resourceGroups/<resourceGroupName>" `
+  -ApiVersion "2021-04-01"
 ```
 
-### Logging
+Save a response to disk:
 
 ```powershell
-Set-ArmLogLevel -Level DEBUG          # DEBUG | INFO | WARN | ERROR
-Set-ArmLogFile  -Path .\arm.log       # write to file as well
-Set-ArmLogFile  -Disable              # stop file logging
-Write-ArmLog    -Level INFO -Message 'Custom message' -Data @{ key = 'value' }
+.\ArmClient-PS.ps1 `
+  -Method GET `
+  -RelativePath "/subscriptions/<subscriptionId>/resourceGroups/<resourceGroupName>" `
+  -ApiVersion "2021-04-01" `
+  -OutputFile "resource-group.json"
 ```
 
----
-
-## Integrity verification
-
-AzArmClient-PS ships with a SHA-256 manifest (`modules.sha256`) that lists
-every `.psm1` file hash.  The main script verifies these hashes before any
-module is imported, preventing tampered or corrupted modules from running.
+Inspect resolved module versions:
 
 ```powershell
-# Regenerate the manifest after modifying a module
-.\Build-AzArmClient.ps1 -SkipModuleDownload -CreateZip:$false
-
-# Skip the check (not recommended in production)
-. .\AzArmClient.ps1 -SkipIntegrityCheck
+.\ArmClient-PS.ps1 -ShowResolvedModuleVersions
 ```
 
----
-
-## Build script
-
-`Build-AzArmClient.ps1` is for maintainers and CI pipelines:
+Run the built-in package self-test:
 
 ```powershell
-# Full build: download pinned Az.Accounts, regenerate manifest, create zip
-.\Build-AzArmClient.ps1
-
-# Regenerate manifest only
-.\Build-AzArmClient.ps1 -SkipModuleDownload -CreateZip:$false
-
-# Custom output locations
-.\Build-AzArmClient.ps1 -OutputDir C:\Releases -ModuleCacheDir C:\AzCache
+.\ArmClient-PS.ps1 -SelfTest
 ```
 
-### Pinned dependencies
+## Maintainer Build Workflow
 
-| Module | Version | Purpose |
-|---|---|---|
-| `Az.Accounts` | 2.15.1 | Interactive auth / `Get-AzAccessToken` |
+Rebuild bundled modules and manifests:
 
-To upgrade: edit `$script:PinnedModules` in `Build-AzArmClient.ps1` and re-run.
-
----
-
-## Security notes
-
-* **Tokens are never logged.**  `Get-AzArmToken` returns the raw token but
-  `Invoke-ArmRequest` only injects it into the `Authorization` header – it is
-  not passed to `Write-ArmLog`.
-* **Client secrets are stored as `SecureString`** and converted to plain text
-  only in the isolated `_GetTokenClientSecret` helper at the moment the token
-  request is made.
-* **Certificate private keys** are used only for JWT signing in
-  `_GetTokenClientCert`; the key material is never serialised or stored.
-* The integrity manifest should be committed to source control and treated as
-  part of the release artefact so consumers can detect supply-chain tampering.
-
----
-
-## Repository layout
-
-```
-AzArmClient-PS/
-├── AzArmClient.ps1        # Main entry-point (dot-source to use)
-├── Build-AzArmClient.ps1  # Maintainer build / bundle script
-├── modules.sha256         # SHA-256 manifest (generated by build)
-├── Modules/
-│   ├── Auth.psm1          # Authentication helpers
-│   ├── ArmRequests.psm1   # HTTP GET/POST/PUT/PATCH/DELETE
-│   ├── LongRunning.psm1   # LRO polling
-│   ├── Logging.psm1       # Structured logging
-│   └── Integrity.psm1     # Hash verification
-├── PSModuleCache/         # Bundled Az modules (generated by build, not committed)
-└── dist/                  # Distribution zip (generated by build, not committed)
+```powershell
+.\Build-BundledModules.ps1 -ToolVersion 1.0.0 -Clean -Force
 ```
 
----
+Optional signing flow:
 
-## Requirements
+```powershell
+.\Build-BundledModules.ps1 `
+  -ToolVersion 1.0.0 `
+  -Clean `
+  -Force `
+  -CodeSigningThumbprint "<thumbprint>"
+```
 
-* PowerShell 5.1 or PowerShell 7+
-* `Az.Accounts` 2.15.1 (required only for **Interactive** authentication;
-  bundled by the build script or install manually:
-  `Install-Module Az.Accounts -RequiredVersion 2.15.1`)
+## Security Notes
 
-## License
+- Runtime execution disables Az context autosave for the current process.
+- Runtime hash validation is enabled by default.
+- Signature validation is available through `-EnforceSignatureValidation`.
+- Tokens and authorization headers are redacted from log output.
+- `Logs\` and `Output\` are runtime folders and are not intended for source control.
 
-MIT – see [LICENSE](LICENSE).
+## Module Resolution Behavior
 
+Default behavior is deterministic:
+
+- Use a bundled module when no newer valid installed version is available.
+- Prefer a newer installed version when it is valid and importable.
+- Use `-PreferBundledModules` to force bundled content.
+- Use `-PreferInstalledModules` to make the installed-module preference explicit.
+
+## Distribution Guidance
+
+Before distributing the package:
+
+1. Run `Build-BundledModules.ps1` on a maintainer machine.
+2. Confirm `Manifest\Files.sha256.json` and `Manifest\Versions.json` were regenerated.
+3. Run `ArmClient-PS.ps1 -SelfTest` from the packaged folder.
+4. Zip the entire folder structure without removing the `Modules` or `Manifest` folders.
