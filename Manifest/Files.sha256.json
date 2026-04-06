@@ -2,24 +2,24 @@
   "schemaVersion": "1.0",
   "generatedUtc": "2026-04-06T15:48:02.5414990Z",
   "algorithm": "SHA256",
-  "notes": "Files.sha256.json intentionally does not hash itself.",
+  "notes": "Files.sha256.json intentionally does not hash itself. Text-file hashes are computed after normalizing CRLF to LF for cross-platform consistency.",
   "files": [
     {
       "path": "ArmClient-PS.ps1",
       "algorithm": "SHA256",
-      "hash": "60AD6AD6C7AD51F0B6B7F7843EC167DEB69BA43189D0D265FC31EF227D6002F5",
+      "hash": "738897EEC053AA7D06F2DE082A820EB78240476DC70ED6691A5445730E183CF7",
       "required": true
     },
     {
       "path": "Build-BundledModules.ps1",
       "algorithm": "SHA256",
-      "hash": "4F8AB2096D635DD0389B3E54421CE52C39815260B61AB35181D3404D07D19900",
+      "hash": "B3152B682C4F194B1EF00C0CA03517DFAAD74478462EFB22AE13869EE712076E",
       "required": true
     },
     {
       "path": "Manifest\\Versions.json",
       "algorithm": "SHA256",
-      "hash": "7827BE1B5AE13DB3429766F9D375CDDBF70C141955F32894836AEBE873B6AE71",
+      "hash": "823FEE6E5830590442DD4B8551A7B51CBEA6983B7E092B039553916B35191EB5",
       "required": true
     },
     {
@@ -31,37 +31,37 @@
     {
       "path": "Modules\\Az.Accounts\\5.3.3\\Accounts.format.ps1xml",
       "algorithm": "SHA256",
-      "hash": "5DF312DAA64E8EF17D20BDECF85DD2701CC0888A4BD3121669135C5FA4F8453E",
+      "hash": "1DD9D7A8401F9943366160A5908D3A677B55C54894C0A05919FD9724C4258504",
       "required": true
     },
     {
       "path": "Modules\\Az.Accounts\\5.3.3\\Accounts.generated.format.ps1xml",
       "algorithm": "SHA256",
-      "hash": "E452590170E0D995DDB55B552102AA305E5320412B78C425E40C63B909AEFA7C",
+      "hash": "7613059549918FDE223B489B4ADB2717C50B55406A66286997BD50E3F58F8C21",
       "required": true
     },
     {
       "path": "Modules\\Az.Accounts\\5.3.3\\Accounts.types.ps1xml",
       "algorithm": "SHA256",
-      "hash": "B7B1373CE0F460A16C43D6685A5D93E4186F7D2D88A4B429FFE82D21503E77D6",
+      "hash": "4E1F92EC73D5B0FA987FA0C9254DCDB321494B31B6623C7BC71398B83F62DAC0",
       "required": true
     },
     {
       "path": "Modules\\Az.Accounts\\5.3.3\\Az.Accounts.psd1",
       "algorithm": "SHA256",
-      "hash": "699C43AD20A196F5A5668C207E08ADB6013FCD22AE162971EB9728F1E4FB61EF",
+      "hash": "57174EBF2BFD54684DBE709916075D3F89508D6A0A3D612EF7C0C9B50DFDFC18",
       "required": true
     },
     {
       "path": "Modules\\Az.Accounts\\5.3.3\\Az.Accounts.psm1",
       "algorithm": "SHA256",
-      "hash": "4DD5F8C243452E9C72B59DCA8C93365E59027E4B2EDA55A515604DC9CE4587E0",
+      "hash": "7D967AC37831E214654CCBA0AB21365D5A165031EC28EB55A93F4DF8D379F49B",
       "required": true
     },
     {
       "path": "Modules\\Az.Accounts\\5.3.3\\en-US\\about_az.help.txt",
       "algorithm": "SHA256",
-      "hash": "395A2517E85E42FF33DB434F605E7E680CE0FB46E10E41493902B236427DCF81",
+      "hash": "C6427C7DF2133A6A7CC3582286795B7BAAB19C668EF3E2BC824575AFB12ACF8C",
       "required": true
     },
     {
@@ -409,7 +409,7 @@
     {
       "path": "Modules\\Az.Accounts\\5.3.3\\Microsoft.Azure.PowerShell.Cmdlets.Accounts.dll-Help.xml",
       "algorithm": "SHA256",
-      "hash": "AAD9BDEB58EFD0B7CECB0D328CC5CB85BB8DAFA8A0A07D484BE1FB5DDE5CF66A",
+      "hash": "118972038101A0E6C865ABE1E6AA5A812C0D6A480724DB7D132CA0EE995116F1",
       "required": true
     },
     {
@@ -457,25 +457,25 @@
     {
       "path": "Modules\\Az.Accounts\\5.3.3\\PostImportScripts\\LoadAuthenticators.ps1",
       "algorithm": "SHA256",
-      "hash": "BD29750279C42A601023AE8664E995DC70EA8F15F57F9DC570526A0479293D9C",
+      "hash": "DDA0873699CD97DCC13D0B99CF7318825D09FF16F21B3CC7AC15DC199DBC5D5C",
       "required": true
     },
     {
       "path": "Modules\\Az.Accounts\\5.3.3\\StartupScripts\\AzError.ps1",
       "algorithm": "SHA256",
-      "hash": "1359F41D096587C619C4BF0526D153707385F00B1B880C270A95F9A9DFAEE0CD",
+      "hash": "F2FEC88CF1BAFF49873F70FFD07744F384D637AA4E6DB7BCFEFC120999C7EB09",
       "required": true
     },
     {
       "path": "Modules\\Az.Accounts\\5.3.3\\StartupScripts\\InitializeAssemblyResolver.ps1",
       "algorithm": "SHA256",
-      "hash": "C67925623CC33451D23F01E08C4E68F9CE4031C4B14C19C29BE875C40BF47970",
+      "hash": "4CE5BE6EA414E073E3A3D6BE5CE20CC825311E790EE3E0C4FBFF5D82A726F043",
       "required": true
     },
     {
       "path": "Modules\\Az.Accounts\\5.3.3\\StartupScripts\\InitializePSStyle.ps1",
       "algorithm": "SHA256",
-      "hash": "AE159A3108E52CACF5487A99FC3ED33BF41ED502E6DCDDCBA2C3E588CE10A4A8",
+      "hash": "13B87560D757B2CFF688F5CCE739BCD72AE422784C362E5C8F744D0880C46596",
       "required": true
     }
   ]
