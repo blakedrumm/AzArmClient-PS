@@ -1,0 +1,26 @@
+{
+  "schemaVersion": "1.0",
+  "tool": {
+    "name": "ArmClient-PS",
+    "version": "1.0.0",
+    "builtUtc": "2026-04-06T14:45:35.8273395Z",
+    "author": "Blake Drumm (blakedrumm@microsoft.com)"
+  },
+  "requiredModules": [
+    {
+      "name": "Az.Accounts",
+      "pinnedVersion": "5.3.0",
+      "repository": "PSGallery"
+    }
+  ],
+  "modules": [
+    {
+      "name": "Az.Accounts",
+      "version": "5.3.0",
+      "source": "Pinned",
+      "manifestPath": "Modules\\Az.Accounts\\5.3.0\\Az.Accounts.psd1",
+      "moduleBase": "Modules\\Az.Accounts\\5.3.0",
+      "requiredModules": []
+    }
+  ]
+}
