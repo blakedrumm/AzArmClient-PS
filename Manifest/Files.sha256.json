@@ -7,13 +7,13 @@
     {
       "path": "ArmClient-PS.ps1",
       "algorithm": "SHA256",
-      "hash": "B7C806DB894212E61F9D69C3FC032267F315F9FCD701FE5173262298ED0D26F8",
+      "hash": "6CFA617EE317C359F2B4687EFF7733BF9EEE19DCCAD59D5F2FB48D809765B402",
       "required": true
     },
     {
       "path": "Build-BundledModules.ps1",
       "algorithm": "SHA256",
-      "hash": "C532BB123433894B5D03BD5EE19C0AA28CABA9F014F24DD51F84FC02C47DA7A6",
+      "hash": "73D634C1EADA809CCD274123E085AE1AEF08A3055F51037E4F45AD4E89D3E4CD",
       "required": true
     },
     {
