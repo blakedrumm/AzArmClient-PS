@@ -22,8 +22,10 @@ Description: Secure ARM-focused REST support utility that uses bundled Az module
 Author: Blake Drumm (blakedrumm@microsoft.com)
 Version: 1.0.0
 Created Date: 2026-04-03
-Last Updated Date: 2026-04-03
+Last Updated Date: 2026-04-06
 Requirements: Windows PowerShell 5.1 or PowerShell 7.x, bundled Az.Accounts module and dependencies.
+Environments: Supports all Azure cloud environments including AzureCloud, AzureUSGovernment, AzureChinaCloud,
+              AzureUSNat, AzureUSSec, and custom environments registered with Add-AzEnvironment (e.g. Azure Stack).
 Notes: Do not log tokens or secrets. Default behavior disables Az context autosave for the current process.
 #>
 [CmdletBinding(DefaultParameterSetName='Utility')]
@@ -73,8 +75,8 @@ $script:Configuration = [ordered]@{
     Version                      = '1.0.0'
     Author                       = 'Blake Drumm (blakedrumm@microsoft.com)'
     RequiredRootModules          = @('Az.Accounts')
-    SupportedBuiltInEnvironments = @('AzureCloud','AzureUSGovernment','AzureChinaCloud')
-    OptionalEnvironment          = 'AzureGermanCloud'
+    SupportedBuiltInEnvironments = @('AzureCloud','AzureUSGovernment','AzureChinaCloud','AzureUSNat','AzureUSSec')
+    DeprecatedEnvironments       = @('AzureGermanCloud')
     DefaultJsonDepth             = 100
     DefaultPollIntervalSeconds   = 5
     LongRunningTimeoutSeconds    = 1800
@@ -392,8 +394,10 @@ function Connect-ArmClientPs {
     if (-not (Test-SubscriptionIdentifier -Value $SubscriptionId)) { throw "SubscriptionId '$SubscriptionId' is not a valid GUID." }
     $environmentObject = Get-AzEnvironmentSafe -Name $script:SessionState.SelectedEnvironment
     if ($null -eq $environmentObject) {
-        if ($script:SessionState.SelectedEnvironment -eq $script:Configuration.OptionalEnvironment) { throw "Azure environment '$($script:SessionState.SelectedEnvironment)' is not available in the resolved Az.Accounts runtime on this machine. Choose another environment or update the bundled module set." }
-        throw "Azure environment '$($script:SessionState.SelectedEnvironment)' is not available. Supported built-in defaults are $($script:Configuration.SupportedBuiltInEnvironments -join ', ')."
+        if ($script:Configuration.DeprecatedEnvironments -contains $script:SessionState.SelectedEnvironment) { throw "Azure environment '$($script:SessionState.SelectedEnvironment)' is deprecated and is not available in the resolved Az.Accounts runtime on this machine. Choose another environment or update the bundled module set." }
+        $availableNames = @(try { Get-AzEnvironment -ErrorAction SilentlyContinue | ForEach-Object { $_.Name } } catch { @() })
+        $hint = if ($availableNames.Count -gt 0) { "Available environments on this machine: $($availableNames -join ', ')." } else { "Built-in defaults include $($script:Configuration.SupportedBuiltInEnvironments -join ', '). Custom or Azure Stack environments can be registered with Add-AzEnvironment." }
+        throw "Azure environment '$($script:SessionState.SelectedEnvironment)' is not available. $hint"
     }
     Write-Log -Level 'INFO' -Message "Using Azure environment '$($environmentObject.Name)'."
     if ($NoLogin) {
