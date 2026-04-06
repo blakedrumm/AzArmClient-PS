@@ -20,7 +20,7 @@ Relative ARM path such as /subscriptions/<id>/resourceGroups/<name>.
 Script Name: ArmClient-PS.ps1
 Description: Secure ARM-focused REST support utility that uses bundled Az modules.
 Author: Blake Drumm (blakedrumm@microsoft.com)
-Version: 1.0.0
+Version: 1.0.1
 Created Date: 2026-04-03
 Last Updated Date: 2026-04-06
 Requirements: Windows PowerShell 5.1 or PowerShell 7.x, bundled Az.Accounts module and dependencies.
@@ -72,7 +72,7 @@ if ([Net.ServicePointManager]::SecurityProtocol -band [Net.SecurityProtocolType]
 $script:Configuration = [ordered]@{
     ScriptName                   = 'ArmClient-PS.ps1'
     ToolName                     = 'ArmClient-PS'
-    Version                      = '1.0.0'
+    Version                      = '1.0.1'
     Author                       = 'Blake Drumm (blakedrumm@microsoft.com)'
     RequiredRootModules          = @('Az.Accounts')
     SupportedBuiltInEnvironments = @('AzureCloud','AzureUSGovernment','AzureChinaCloud','AzureUSNat','AzureUSSec')
