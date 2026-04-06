@@ -376,6 +376,8 @@ function Import-BundledModules { [CmdletBinding()] param() Test-BundledModuleFil
 
 function Test-TenantIdentifier { [CmdletBinding()] param([string]$Value) if([string]::IsNullOrWhiteSpace($Value)){return $true}; if($Value -match '^[0-9a-fA-F-]{36}$'){return $true}; ($Value -match '^[A-Za-z0-9][A-Za-z0-9\.-]*\.[A-Za-z]{2,}$') }
 function Test-SubscriptionIdentifier { [CmdletBinding()] param([string]$Value) if([string]::IsNullOrWhiteSpace($Value)){return $true}; ($Value -match '^[0-9a-fA-F-]{36}$') }
+function Test-SubscriptionErrorMessage { [CmdletBinding()] param([Parameter(Mandatory=$true)][string]$Message) ($Message -like '*does not have access to subscription*') -or ($Message -like '*could not be found*' -and $Message -like '*subscription*') }
+function Test-TenantErrorMessage { [CmdletBinding()] param([Parameter(Mandatory=$true)][string]$Message) ($Message -like '*Unable to acquire token for tenant*') -or ($Message -like '*User interaction is required*' -and $Message -like '*tenant*') -or ($Message -like '*multiple tenants*') -or ($Message -like '*AADSTS50076*') -or ($Message -like '*tenant*' -and $Message -like '*MFA*') }
 
 function Get-CurrentAzContextSafe {
     [CmdletBinding()] param()
@@ -510,8 +512,8 @@ function Connect-ArmClientPs {
     }
     catch {
         $errMsg = $_.Exception.Message
-        $isSubscriptionError = ($errMsg -like '*does not have access to subscription*') -or ($errMsg -like '*could not be found*' -and $errMsg -like '*subscription*')
-        $isTenantError = ($errMsg -like '*Unable to acquire token for tenant*') -or ($errMsg -like '*User interaction is required*' -and $errMsg -like '*tenant*') -or ($errMsg -like '*multiple tenants*') -or ($errMsg -like '*AADSTS50076*') -or ($errMsg -like '*tenant*' -and $errMsg -like '*MFA*')
+        $isSubscriptionError = Test-SubscriptionErrorMessage -Message $errMsg
+        $isTenantError = Test-TenantErrorMessage -Message $errMsg
         if (-not $isSubscriptionError -and -not $isTenantError) { throw }
         if ($isTenantError) {
             Write-Log -Level 'WARN' -Message 'Tenant could not be resolved automatically. Attempting to authenticate and list available tenants.'
@@ -527,7 +529,7 @@ function Connect-ArmClientPs {
             }
             catch {
                 $reconnectErr = $_.Exception.Message
-                $isSubErrorAfterTenant = ($reconnectErr -like '*does not have access to subscription*') -or ($reconnectErr -like '*could not be found*' -and $reconnectErr -like '*subscription*')
+                $isSubErrorAfterTenant = Test-SubscriptionErrorMessage -Message $reconnectErr
                 if (-not $isSubErrorAfterTenant) { throw }
                 $subFallback = @{ Environment=$environmentObject.Name; Scope='Process'; ErrorAction='Stop'; Tenant=$selectedTenantId }
                 if ($UseManagedIdentity) { $subFallback['Identity'] = $true } elseif ($UseDeviceCode) { $subFallback['UseDeviceAuthentication'] = $true }
