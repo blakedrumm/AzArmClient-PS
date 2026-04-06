@@ -52,7 +52,7 @@ $script:Configuration = [ordered]@{
     VersionsManifestName      = 'Versions.json'
     FileHashManifestName      = 'Files.sha256.json'
     FileHashAlgorithm         = 'SHA256'
-    TextFileExtensions        = @('.ps1','.psm1','.psd1','.ps1xml','.json','.txt','.xml','.help.txt')
+    TextFileExtensions        = @('.ps1','.psm1','.psd1','.ps1xml','.json','.txt','.xml')
     RequiredModules           = @(
         [pscustomobject]@{ Name='Az.Accounts'; Version='5.3.3'; Repository='PSGallery' }
     )
