@@ -360,6 +360,17 @@ function Add-BundledModulesToPsModulePath {
     $script:SessionState.BundledModulePathAdded = $true
 }
 
+function Clear-ModuleZoneIdentifier {
+    [CmdletBinding()] param([Parameter(Mandatory=$true)][string]$ModuleBase)
+    if ([Environment]::OSVersion.Platform -ne [PlatformID]::Win32NT) { return }
+    if (-not (Get-Command -Name Unblock-File -ErrorAction SilentlyContinue)) { return }
+    $extensions = @('.ps1','.psm1','.psd1','.ps1xml','.dll','.exe','.json','.txt','.xml')
+    foreach ($file in @(Get-ChildItem -LiteralPath $ModuleBase -Recurse -File -ErrorAction SilentlyContinue | Where-Object { $extensions -contains $_.Extension.ToLowerInvariant() })) {
+        try { Unblock-File -LiteralPath $file.FullName -ErrorAction Stop }
+        catch { Write-Log -Level 'DEBUG' -Message "Could not remove Zone.Identifier metadata from '$($file.FullName)'; continuing with module import." -Data $_.Exception.Message }
+    }
+}
+
 function Import-ResolvedModule {
     [CmdletBinding()] param([Parameter(Mandatory=$true)][pscustomobject]$ResolutionItem)
     $queue = [Collections.Generic.List[object]]::new(); if ($ResolutionItem.PreferredCandidate) { $queue.Add($ResolutionItem.PreferredCandidate) }; if ($ResolutionItem.FallbackCandidate -and ($ResolutionItem.PreferredCandidate -eq $null -or $ResolutionItem.FallbackCandidate.ManifestPath -ne $ResolutionItem.PreferredCandidate.ManifestPath)) { $queue.Add($ResolutionItem.FallbackCandidate) }
@@ -379,6 +390,7 @@ function Import-ResolvedModule {
                     Test-FileHashManifest -RelativePaths ($moduleEntries | % { [string]$_.path })
                 }
             }
+            Clear-ModuleZoneIdentifier -ModuleBase $candidate.ModuleBase
             if ($EnforceSignatureValidation) { $signable = Get-SignableFiles -Path $candidate.ModuleBase; if ($signable.Count -lt 1) { throw "Signature validation was requested, but no signable files were found for module '$($candidate.Name)'." }; Test-AuthenticodeIfRequested -Paths $signable }
             Import-Module -Name $candidate.ManifestPath -Force -DisableNameChecking -Scope Global -WarningAction SilentlyContinue | Out-Null
             $ResolutionItem.SelectedCandidate = $candidate
