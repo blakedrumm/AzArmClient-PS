@@ -60,6 +60,13 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
+# Enforce TLS 1.2 or higher for all HTTPS connections (required for government and production environments).
+if ([Net.ServicePointManager]::SecurityProtocol -band [Net.SecurityProtocolType]::Ssl3 -or
+    [Net.ServicePointManager]::SecurityProtocol -band [Net.SecurityProtocolType]::Tls -or
+    -not ([Net.ServicePointManager]::SecurityProtocol -band [Net.SecurityProtocolType]::Tls12)) {
+    [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+}
+
 $script:Configuration = [ordered]@{
     ScriptName                   = 'ArmClient-PS.ps1'
     ToolName                     = 'ArmClient-PS'
@@ -140,7 +147,7 @@ function Write-Log {
     $line = '{0} [{1}] {2}' -f (Get-Date).ToString('yyyy-MM-ddTHH:mm:ss.fffK'), $Level, (Redact-SensitiveText -Text $Message)
     if ($PSBoundParameters.ContainsKey('Data')) { $safe = ConvertTo-LogSafeString -InputObject $Data; if (-not [string]::IsNullOrWhiteSpace($safe)) { $line = '{0} | {1}' -f $line, $safe } }
     if ($script:SessionState.LogFilePath) { Add-Content -LiteralPath $script:SessionState.LogFilePath -Value $line -Encoding UTF8 }
-    Write-Output $line
+    Write-Host $line
 }
 
 function Get-LastPipelineValueSafe {
@@ -194,7 +201,8 @@ function Test-FileHashManifest {
     foreach ($entry in $entries) {
         $fullPath = Join-Path $script:SessionState.ScriptRoot ([string]$entry.path)
         if (-not (Test-Path -LiteralPath $fullPath)) { throw "Hash validation failed because '$($entry.path)' is missing. The package is incomplete or was modified after packaging." }
-        $actual = (Get-FileHash -LiteralPath $fullPath -Algorithm ([string]($entry.algorithm ? $entry.algorithm : 'SHA256'))).Hash.ToUpperInvariant()
+        $hashAlgorithm = if ($entry.algorithm) { [string]$entry.algorithm } else { 'SHA256' }
+        $actual = (Get-FileHash -LiteralPath $fullPath -Algorithm $hashAlgorithm).Hash.ToUpperInvariant()
         $expected = ([string]$entry.hash).ToUpperInvariant()
         if ($actual -ne $expected) { throw "Hash validation failed for '$($entry.path)'. The package contents no longer match the trusted manifest. Rebuild or replace the package before continuing." }
     }
