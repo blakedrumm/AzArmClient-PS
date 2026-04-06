@@ -388,6 +388,53 @@ function Initialize-AzProcessSecurity { [CmdletBinding()] param() Disable-AzCont
 function Get-AzEnvironmentSafe { [CmdletBinding()] param([Parameter(Mandatory=$true)][string]$Name) try { Get-AzEnvironment -Name $Name -ErrorAction Stop } catch { $null } }
 function Set-TargetSubscription { [CmdletBinding()] param([Parameter(Mandatory=$true)][string]$TargetSubscriptionId) if(-not (Test-SubscriptionIdentifier -Value $TargetSubscriptionId)){ throw "SubscriptionId '$TargetSubscriptionId' is not a valid GUID." }; $null = Set-AzContext -Subscription $TargetSubscriptionId -ErrorAction Stop; Write-Log -Level 'INFO' -Message "Set Azure context subscription to '$TargetSubscriptionId'." }
 
+function Select-AzSubscriptionInteractive {
+    [CmdletBinding()] param()
+    Write-Log -Level 'INFO' -Message 'Multiple subscriptions available. Retrieving subscription list...'
+    $subscriptions = @(Get-AzSubscription -ErrorAction Stop | Where-Object { $_.State -eq 'Enabled' })
+    if ($subscriptions.Count -eq 0) {
+        $subscriptions = @(Get-AzSubscription -ErrorAction Stop)
+    }
+    if ($subscriptions.Count -eq 0) {
+        throw 'No subscriptions found for the authenticated account.'
+    }
+    if ($subscriptions.Count -eq 1) {
+        Write-Log -Level 'INFO' -Message "Only one subscription available: '$($subscriptions[0].Name)' ($($subscriptions[0].Id)). Selecting it automatically."
+        return $subscriptions[0].Id
+    }
+    Write-Host ''
+    Write-Host 'Available subscriptions:' -ForegroundColor Cyan
+    Write-Host ('-' * 80) -ForegroundColor DarkGray
+    for ($i = 0; $i -lt $subscriptions.Count; $i++) {
+        $sub = $subscriptions[$i]
+        $index = $i + 1
+        $state = $sub.State
+        $displayName = $sub.Name
+        $displayId = $sub.Id
+        Write-Host ('  [{0}] {1}' -f $index, $displayName) -ForegroundColor White -NoNewline
+        Write-Host (' ({0})' -f $displayId) -ForegroundColor DarkGray -NoNewline
+        if ($state -ne 'Enabled') {
+            Write-Host (' [{0}]' -f $state) -ForegroundColor Yellow
+        }
+        else {
+            Write-Host ''
+        }
+    }
+    Write-Host ('-' * 80) -ForegroundColor DarkGray
+    Write-Host ''
+    while ($true) {
+        $selection = Read-Host 'Enter the number of the subscription to use'
+        if ([string]::IsNullOrWhiteSpace($selection)) { continue }
+        $parsed = 0
+        if ([int]::TryParse($selection, [ref]$parsed) -and $parsed -ge 1 -and $parsed -le $subscriptions.Count) {
+            $chosen = $subscriptions[$parsed - 1]
+            Write-Log -Level 'INFO' -Message "Selected subscription: '$($chosen.Name)' ($($chosen.Id))."
+            return $chosen.Id
+        }
+        Write-Host "Invalid selection '$selection'. Please enter a number between 1 and $($subscriptions.Count)." -ForegroundColor Red
+    }
+}
+
 function Connect-ArmClientPs {
     [CmdletBinding()] param()
     if (-not (Test-TenantIdentifier -Value $TenantId)) { throw "TenantId '$TenantId' is not a valid GUID or verified domain name." }
@@ -410,9 +457,26 @@ function Connect-ArmClientPs {
     if ($TenantId) { $connectParams['Tenant'] = $TenantId }
     if ($SubscriptionId) { $connectParams['Subscription'] = $SubscriptionId }
     if ($UseManagedIdentity) { $connectParams['Identity'] = $true } elseif ($UseDeviceCode) { $connectParams['UseDeviceAuthentication'] = $true }
-    $null = Connect-AzAccount @connectParams
+    try {
+        $null = Connect-AzAccount @connectParams
+    }
+    catch {
+        $errMsg = $_.Exception.Message
+        $isSubscriptionError = ($errMsg -like '*does not have access to subscription*') -or ($errMsg -like '*could not be found*' -and $errMsg -like '*subscription*')
+        if (-not $isSubscriptionError) { throw }
+        Write-Log -Level 'WARN' -Message 'Subscription could not be resolved. Attempting to authenticate without a specific subscription and list available subscriptions.'
+        $fallbackParams = @{ Environment=$environmentObject.Name; Scope='Process'; ErrorAction='Stop' }
+        if ($TenantId) { $fallbackParams['Tenant'] = $TenantId }
+        if ($UseManagedIdentity) { $fallbackParams['Identity'] = $true } elseif ($UseDeviceCode) { $fallbackParams['UseDeviceAuthentication'] = $true }
+        $null = Connect-AzAccount @fallbackParams
+        $selectedSubId = Select-AzSubscriptionInteractive
+        Set-TargetSubscription -TargetSubscriptionId $selectedSubId
+    }
     $script:SessionState.AuthenticatedByScript = $true
-    if ($SubscriptionId) { Set-TargetSubscription -TargetSubscriptionId $SubscriptionId }
+    if ($SubscriptionId) {
+        $ctx = Get-CurrentAzContextSafe
+        if ($null -eq $ctx -or $ctx.SubscriptionId -ne $SubscriptionId) { Set-TargetSubscription -TargetSubscriptionId $SubscriptionId }
+    }
     $currentContext = Get-CurrentAzContextSafe
     if ($null -eq $currentContext) { throw 'Authentication completed but no Azure context is available. Re-run the command and confirm that the selected account can access the requested tenant or subscription.' }
     Write-Log -Level 'INFO' -Message 'Authenticated Azure context.' -Data $currentContext
