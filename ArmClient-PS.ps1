@@ -360,15 +360,14 @@ function Add-BundledModulesToPsModulePath {
     $script:SessionState.BundledModulePathAdded = $true
 }
 
-function Test-IsWindowsPlatform { [CmdletBinding()] param() ([Environment]::OSVersion.Platform -eq [PlatformID]::Win32NT) }
-
 function Clear-ModuleZoneIdentifier {
     [CmdletBinding()] param([Parameter(Mandatory=$true)][string]$ModuleBase)
-    if (-not (Test-IsWindowsPlatform)) { return }
+    if ([Environment]::OSVersion.Platform -ne [PlatformID]::Win32NT) { return }
     if (-not (Get-Command -Name Unblock-File -ErrorAction SilentlyContinue)) { return }
-    foreach ($file in @(Get-ChildItem -LiteralPath $ModuleBase -Recurse -File -ErrorAction SilentlyContinue)) {
+    $extensions = @('.ps1','.psm1','.psd1','.ps1xml','.dll','.exe','.json','.txt','.xml')
+    foreach ($file in @(Get-ChildItem -LiteralPath $ModuleBase -Recurse -File -ErrorAction SilentlyContinue | Where-Object { $extensions -contains $_.Extension.ToLowerInvariant() })) {
         try { Unblock-File -LiteralPath $file.FullName -ErrorAction Stop }
-        catch { Write-Log -Level 'DEBUG' -Message "Unable to unblock file '$($file.FullName)' before module import." -Data $_.Exception.Message }
+        catch { Write-Log -Level 'DEBUG' -Message "Could not remove Zone.Identifier metadata from '$($file.FullName)'; continuing with module import." -Data $_.Exception.Message }
     }
 }
 
