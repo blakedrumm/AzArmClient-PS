@@ -37,7 +37,7 @@ $ErrorActionPreference = 'Stop'
 if ([Net.ServicePointManager]::SecurityProtocol -band [Net.SecurityProtocolType]::Ssl3 -or
     [Net.ServicePointManager]::SecurityProtocol -band [Net.SecurityProtocolType]::Tls -or
     -not ([Net.ServicePointManager]::SecurityProtocol -band [Net.SecurityProtocolType]::Tls12)) {
-    [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+    [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
 }
 
 $script:Configuration = [ordered]@{
