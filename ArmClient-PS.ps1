@@ -22,8 +22,10 @@ Description: Secure ARM-focused REST support utility that uses bundled Az module
 Author: Blake Drumm (blakedrumm@microsoft.com)
 Version: 1.0.0
 Created Date: 2026-04-03
-Last Updated Date: 2026-04-03
+Last Updated Date: 2026-04-06
 Requirements: Windows PowerShell 5.1 or PowerShell 7.x, bundled Az.Accounts module and dependencies.
+Environments: Supports all Azure cloud environments including AzureCloud, AzureUSGovernment, AzureChinaCloud,
+              AzureUSNat, AzureUSSec, and custom environments registered with Add-AzEnvironment (e.g. Azure Stack).
 Notes: Do not log tokens or secrets. Default behavior disables Az context autosave for the current process.
 #>
 [CmdletBinding(DefaultParameterSetName='Utility')]
@@ -60,14 +62,21 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
+# Enforce TLS 1.2 or higher for all HTTPS connections (required for government and production environments).
+if ([Net.ServicePointManager]::SecurityProtocol -band [Net.SecurityProtocolType]::Ssl3 -or
+    [Net.ServicePointManager]::SecurityProtocol -band [Net.SecurityProtocolType]::Tls -or
+    -not ([Net.ServicePointManager]::SecurityProtocol -band [Net.SecurityProtocolType]::Tls12)) {
+    [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
+}
+
 $script:Configuration = [ordered]@{
     ScriptName                   = 'ArmClient-PS.ps1'
     ToolName                     = 'ArmClient-PS'
     Version                      = '1.0.0'
     Author                       = 'Blake Drumm (blakedrumm@microsoft.com)'
     RequiredRootModules          = @('Az.Accounts')
-    SupportedBuiltInEnvironments = @('AzureCloud','AzureUSGovernment','AzureChinaCloud')
-    OptionalEnvironment          = 'AzureGermanCloud'
+    SupportedBuiltInEnvironments = @('AzureCloud','AzureUSGovernment','AzureChinaCloud','AzureUSNat','AzureUSSec')
+    DeprecatedEnvironments       = @('AzureGermanCloud')
     DefaultJsonDepth             = 100
     DefaultPollIntervalSeconds   = 5
     LongRunningTimeoutSeconds    = 1800
@@ -140,7 +149,7 @@ function Write-Log {
     $line = '{0} [{1}] {2}' -f (Get-Date).ToString('yyyy-MM-ddTHH:mm:ss.fffK'), $Level, (Redact-SensitiveText -Text $Message)
     if ($PSBoundParameters.ContainsKey('Data')) { $safe = ConvertTo-LogSafeString -InputObject $Data; if (-not [string]::IsNullOrWhiteSpace($safe)) { $line = '{0} | {1}' -f $line, $safe } }
     if ($script:SessionState.LogFilePath) { Add-Content -LiteralPath $script:SessionState.LogFilePath -Value $line -Encoding UTF8 }
-    Write-Output $line
+    Write-Host $line
 }
 
 function Get-LastPipelineValueSafe {
@@ -194,7 +203,8 @@ function Test-FileHashManifest {
     foreach ($entry in $entries) {
         $fullPath = Join-Path $script:SessionState.ScriptRoot ([string]$entry.path)
         if (-not (Test-Path -LiteralPath $fullPath)) { throw "Hash validation failed because '$($entry.path)' is missing. The package is incomplete or was modified after packaging." }
-        $actual = (Get-FileHash -LiteralPath $fullPath -Algorithm ([string]($entry.algorithm ? $entry.algorithm : 'SHA256'))).Hash.ToUpperInvariant()
+        $hashAlgorithm = if ($entry.algorithm) { [string]$entry.algorithm } else { 'SHA256' }
+        $actual = (Get-FileHash -LiteralPath $fullPath -Algorithm $hashAlgorithm).Hash.ToUpperInvariant()
         $expected = ([string]$entry.hash).ToUpperInvariant()
         if ($actual -ne $expected) { throw "Hash validation failed for '$($entry.path)'. The package contents no longer match the trusted manifest. Rebuild or replace the package before continuing." }
     }
@@ -384,8 +394,10 @@ function Connect-ArmClientPs {
     if (-not (Test-SubscriptionIdentifier -Value $SubscriptionId)) { throw "SubscriptionId '$SubscriptionId' is not a valid GUID." }
     $environmentObject = Get-AzEnvironmentSafe -Name $script:SessionState.SelectedEnvironment
     if ($null -eq $environmentObject) {
-        if ($script:SessionState.SelectedEnvironment -eq $script:Configuration.OptionalEnvironment) { throw "Azure environment '$($script:SessionState.SelectedEnvironment)' is not available in the resolved Az.Accounts runtime on this machine. Choose another environment or update the bundled module set." }
-        throw "Azure environment '$($script:SessionState.SelectedEnvironment)' is not available. Supported built-in defaults are $($script:Configuration.SupportedBuiltInEnvironments -join ', ')."
+        if ($script:Configuration.DeprecatedEnvironments -contains $script:SessionState.SelectedEnvironment) { throw "Azure environment '$($script:SessionState.SelectedEnvironment)' is deprecated and is not available in the resolved Az.Accounts runtime on this machine. Choose another environment or update the bundled module set." }
+        $availableNames = @(try { Get-AzEnvironment -ErrorAction SilentlyContinue | ForEach-Object { $_.Name } } catch { @() })
+        $hint = if ($availableNames.Count -gt 0) { "Available environments on this machine: $($availableNames -join ', ')." } else { "Built-in defaults include $($script:Configuration.SupportedBuiltInEnvironments -join ', '). Custom or Azure Stack environments can be registered with Add-AzEnvironment." }
+        throw "Azure environment '$($script:SessionState.SelectedEnvironment)' is not available. $hint"
     }
     Write-Log -Level 'INFO' -Message "Using Azure environment '$($environmentObject.Name)'."
     if ($NoLogin) {

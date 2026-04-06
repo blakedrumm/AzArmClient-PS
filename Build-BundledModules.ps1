@@ -33,6 +33,13 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
+# Enforce TLS 1.2 or higher for all HTTPS connections (required for government and production environments).
+if ([Net.ServicePointManager]::SecurityProtocol -band [Net.SecurityProtocolType]::Ssl3 -or
+    [Net.ServicePointManager]::SecurityProtocol -band [Net.SecurityProtocolType]::Tls -or
+    -not ([Net.ServicePointManager]::SecurityProtocol -band [Net.SecurityProtocolType]::Tls12)) {
+    [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
+}
+
 $script:Configuration = [ordered]@{
     ScriptName                = 'Build-BundledModules.ps1'
     ToolScriptName            = 'ArmClient-PS.ps1'
@@ -56,6 +63,19 @@ $script:BuildState = [ordered]@{ ScriptRoot=$null; OutputRoot=$null; ModulesPath
 function Get-ScriptRoot { [CmdletBinding()] param() (Split-Path -Path $script:ScriptPath -Parent) }
 function Ensure-Directory { [CmdletBinding()] param([Parameter(Mandatory=$true)][string]$Path) if(-not (Test-Path -LiteralPath $Path)){ $null = New-Item -Path $Path -ItemType Directory -Force } }
 function Get-SafeFullPath { [CmdletBinding()] param([Parameter(Mandatory=$true)][string]$Path) ([IO.Path]::GetFullPath($Path)) }
+function Get-RelativePathFromBase {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory=$true)][string]$BasePath,
+        [Parameter(Mandatory=$true)][string]$FullPath
+    )
+    $resolvedBase = [IO.Path]::GetFullPath($BasePath).TrimEnd('\','/')
+    $resolvedFull = [IO.Path]::GetFullPath($FullPath)
+    if (-not $resolvedFull.StartsWith($resolvedBase, [StringComparison]::OrdinalIgnoreCase)) {
+        throw "Path '$FullPath' is not under base '$BasePath'."
+    }
+    $resolvedFull.Substring($resolvedBase.Length).TrimStart('\', '/')
+}
 function Write-Log { [CmdletBinding()] param([Parameter(Mandatory=$true)][ValidateSet('INFO','WARN','ERROR','DEBUG')][string]$Level,[Parameter(Mandatory=$true)][string]$Message,[AllowNull()][object]$Data) if($Level -eq 'DEBUG' -and -not $DebugLogging){return}; $line='{0} [{1}] {2}' -f (Get-Date).ToString('yyyy-MM-ddTHH:mm:ss.fffK'),$Level,$Message; if($PSBoundParameters.ContainsKey('Data') -and $null -ne $Data){ try { $line='{0} | {1}' -f $line, ($Data | ConvertTo-Json -Depth 50 -Compress) } catch { $line='{0} | {1}' -f $line, (($Data | Out-String).Trim()) } }; if($script:BuildState.LogFilePath){ Add-Content -LiteralPath $script:BuildState.LogFilePath -Value $line -Encoding UTF8 }; Write-Output $line }
 function Assert-PathUnderRoot { [CmdletBinding()] param([Parameter(Mandatory=$true)][string]$Path,[Parameter(Mandatory=$true)][string]$Root) $resolvedPath=Get-SafeFullPath -Path $Path; $resolvedRoot=Get-SafeFullPath -Path $Root; if(-not $resolvedPath.StartsWith($resolvedRoot,[StringComparison]::OrdinalIgnoreCase)){ throw "Path '$resolvedPath' is outside of allowed root '$resolvedRoot'." } }
 
@@ -180,8 +200,8 @@ function Resolve-BundledDependencies {
             Name            = $moduleName
             Version         = [string]$moduleVersion
             Source          = if ($requiredLookup.ContainsKey($key)) { 'Pinned' } else { 'Dependency' }
-            ManifestPath    = ([IO.Path]::GetRelativePath($script:BuildState.OutputRoot,$manifestFile.FullName)).Replace('/','\')
-            ModuleBase      = ([IO.Path]::GetRelativePath($script:BuildState.OutputRoot,$manifestFile.Directory.FullName)).Replace('/','\')
+            ManifestPath    = (Get-RelativePathFromBase -BasePath $script:BuildState.OutputRoot -FullPath $manifestFile.FullName).Replace('/','\')
+            ModuleBase      = (Get-RelativePathFromBase -BasePath $script:BuildState.OutputRoot -FullPath $manifestFile.Directory.FullName).Replace('/','\')
             RequiredModules = @($requiredModules | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Sort-Object -Unique)
         }
     }
@@ -234,9 +254,9 @@ function Get-ModuleFileInventory {
     [CmdletBinding()] param()
     $inventory = [Collections.Generic.List[object]]::new()
     foreach ($rootFile in @((Join-Path $script:BuildState.OutputRoot $script:Configuration.ToolScriptName),(Join-Path $script:BuildState.OutputRoot $script:Configuration.ScriptName),(Join-Path $script:BuildState.ManifestPath $script:Configuration.VersionsManifestName))) {
-        if (Test-Path -LiteralPath $rootFile -PathType Leaf) { $inventory.Add([pscustomobject]@{ FullPath=$rootFile; RelativePath=([IO.Path]::GetRelativePath($script:BuildState.OutputRoot,$rootFile)).Replace('/','\') }) }
+        if (Test-Path -LiteralPath $rootFile -PathType Leaf) { $inventory.Add([pscustomobject]@{ FullPath=$rootFile; RelativePath=(Get-RelativePathFromBase -BasePath $script:BuildState.OutputRoot -FullPath $rootFile).Replace('/','\') }) }
     }
-    foreach ($moduleFile in @(Get-ChildItem -LiteralPath $script:BuildState.ModulesPath -Recurse -File)) { $inventory.Add([pscustomobject]@{ FullPath=$moduleFile.FullName; RelativePath=([IO.Path]::GetRelativePath($script:BuildState.OutputRoot,$moduleFile.FullName)).Replace('/','\') }) }
+    foreach ($moduleFile in @(Get-ChildItem -LiteralPath $script:BuildState.ModulesPath -Recurse -File)) { $inventory.Add([pscustomobject]@{ FullPath=$moduleFile.FullName; RelativePath=(Get-RelativePathFromBase -BasePath $script:BuildState.OutputRoot -FullPath $moduleFile.FullName).Replace('/','\') }) }
     @($inventory | Sort-Object RelativePath -Unique)
 }
 function New-FileHashManifest {
