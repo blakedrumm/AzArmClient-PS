@@ -376,6 +376,8 @@ function Import-BundledModules { [CmdletBinding()] param() Test-BundledModuleFil
 
 function Test-TenantIdentifier { [CmdletBinding()] param([string]$Value) if([string]::IsNullOrWhiteSpace($Value)){return $true}; if($Value -match '^[0-9a-fA-F-]{36}$'){return $true}; ($Value -match '^[A-Za-z0-9][A-Za-z0-9\.-]*\.[A-Za-z]{2,}$') }
 function Test-SubscriptionIdentifier { [CmdletBinding()] param([string]$Value) if([string]::IsNullOrWhiteSpace($Value)){return $true}; ($Value -match '^[0-9a-fA-F-]{36}$') }
+function Test-SubscriptionErrorMessage { [CmdletBinding()] param([Parameter(Mandatory=$true)][string]$Message) ($Message -like '*does not have access to subscription*') -or ($Message -like '*could not be found*' -and $Message -like '*subscription*') }
+function Test-TenantErrorMessage { [CmdletBinding()] param([Parameter(Mandatory=$true)][string]$Message) ($Message -like '*Unable to acquire token for tenant*') -or ($Message -like '*User interaction is required*' -and $Message -like '*tenant*') -or ($Message -like '*multiple tenants*') -or ($Message -like '*AADSTS50076*') -or ($Message -like '*tenant*' -and $Message -like '*MFA*') }
 
 function Get-CurrentAzContextSafe {
     [CmdletBinding()] param()
@@ -387,6 +389,101 @@ function Get-CurrentAzContextSafe {
 function Initialize-AzProcessSecurity { [CmdletBinding()] param() Disable-AzContextAutosave -Scope Process -WarningAction SilentlyContinue | Out-Null; Write-Log -Level 'INFO' -Message 'Disabled Az context autosave for the current process.' }
 function Get-AzEnvironmentSafe { [CmdletBinding()] param([Parameter(Mandatory=$true)][string]$Name) try { Get-AzEnvironment -Name $Name -ErrorAction Stop } catch { $null } }
 function Set-TargetSubscription { [CmdletBinding()] param([Parameter(Mandatory=$true)][string]$TargetSubscriptionId) if(-not (Test-SubscriptionIdentifier -Value $TargetSubscriptionId)){ throw "SubscriptionId '$TargetSubscriptionId' is not a valid GUID." }; $null = Set-AzContext -Subscription $TargetSubscriptionId -ErrorAction Stop; Write-Log -Level 'INFO' -Message "Set Azure context subscription to '$TargetSubscriptionId'." }
+
+function Select-AzTenantInteractive {
+    [CmdletBinding()] param()
+    Write-Log -Level 'INFO' -Message 'Multiple tenants available. Retrieving tenant list...'
+    $tenants = @(Get-AzTenant -ErrorAction Stop)
+    if ($tenants.Count -eq 0) {
+        throw 'No tenants found for the authenticated account.'
+    }
+    if ($tenants.Count -eq 1) {
+        Write-Log -Level 'INFO' -Message "Only one tenant available: '$($tenants[0].Id)'. Selecting it automatically."
+        return $tenants[0].Id
+    }
+    Write-Host ''
+    Write-Host 'Available tenants:' -ForegroundColor Cyan
+    Write-Host ('-' * 80) -ForegroundColor DarkGray
+    for ($i = 0; $i -lt $tenants.Count; $i++) {
+        $t = $tenants[$i]
+        $index = $i + 1
+        $displayId = $t.Id
+        $displayName = $t.Name
+        $defaultDomain = $t.DefaultDomain
+        $label = if ($displayName) { $displayName } else { $displayId }
+        Write-Host ('  [{0}] {1}' -f $index, $label) -ForegroundColor White -NoNewline
+        if ($displayName -and $defaultDomain) {
+            Write-Host (' ({0} - {1})' -f $displayId, $defaultDomain) -ForegroundColor DarkGray
+        }
+        elseif ($displayName) {
+            Write-Host (' ({0})' -f $displayId) -ForegroundColor DarkGray
+        }
+        else {
+            Write-Host ''
+        }
+    }
+    Write-Host ('-' * 80) -ForegroundColor DarkGray
+    Write-Host ''
+    while ($true) {
+        $selection = Read-Host 'Enter the number of the tenant to use'
+        if ([string]::IsNullOrWhiteSpace($selection)) { continue }
+        $parsed = 0
+        if ([int]::TryParse($selection, [ref]$parsed) -and $parsed -ge 1 -and $parsed -le $tenants.Count) {
+            $chosen = $tenants[$parsed - 1]
+            $chosenLabel = if ($chosen.Name) { "'{0}' ({1})" -f $chosen.Name, $chosen.Id } else { $chosen.Id }
+            Write-Log -Level 'INFO' -Message "Selected tenant: $chosenLabel."
+            return $chosen.Id
+        }
+        Write-Host "Invalid selection '$selection'. Please enter a number between 1 and $($tenants.Count)." -ForegroundColor Red
+    }
+}
+
+function Select-AzSubscriptionInteractive {
+    [CmdletBinding()] param()
+    Write-Log -Level 'INFO' -Message 'Multiple subscriptions available. Retrieving subscription list...'
+    $subscriptions = @(Get-AzSubscription -ErrorAction Stop | Where-Object { $_.State -eq 'Enabled' })
+    if ($subscriptions.Count -eq 0) {
+        $subscriptions = @(Get-AzSubscription -ErrorAction Stop)
+    }
+    if ($subscriptions.Count -eq 0) {
+        throw 'No subscriptions found for the authenticated account.'
+    }
+    if ($subscriptions.Count -eq 1) {
+        Write-Log -Level 'INFO' -Message "Only one subscription available: '$($subscriptions[0].Name)' ($($subscriptions[0].Id)). Selecting it automatically."
+        return $subscriptions[0].Id
+    }
+    Write-Host ''
+    Write-Host 'Available subscriptions:' -ForegroundColor Cyan
+    Write-Host ('-' * 80) -ForegroundColor DarkGray
+    for ($i = 0; $i -lt $subscriptions.Count; $i++) {
+        $sub = $subscriptions[$i]
+        $index = $i + 1
+        $state = $sub.State
+        $displayName = $sub.Name
+        $displayId = $sub.Id
+        Write-Host ('  [{0}] {1}' -f $index, $displayName) -ForegroundColor White -NoNewline
+        Write-Host (' ({0})' -f $displayId) -ForegroundColor DarkGray -NoNewline
+        if ($state -ne 'Enabled') {
+            Write-Host (' [{0}]' -f $state) -ForegroundColor Yellow
+        }
+        else {
+            Write-Host ''
+        }
+    }
+    Write-Host ('-' * 80) -ForegroundColor DarkGray
+    Write-Host ''
+    while ($true) {
+        $selection = Read-Host 'Enter the number of the subscription to use'
+        if ([string]::IsNullOrWhiteSpace($selection)) { continue }
+        $parsed = 0
+        if ([int]::TryParse($selection, [ref]$parsed) -and $parsed -ge 1 -and $parsed -le $subscriptions.Count) {
+            $chosen = $subscriptions[$parsed - 1]
+            Write-Log -Level 'INFO' -Message "Selected subscription: '$($chosen.Name)' ($($chosen.Id))."
+            return $chosen.Id
+        }
+        Write-Host "Invalid selection '$selection'. Please enter a number between 1 and $($subscriptions.Count)." -ForegroundColor Red
+    }
+}
 
 function Connect-ArmClientPs {
     [CmdletBinding()] param()
@@ -410,9 +507,52 @@ function Connect-ArmClientPs {
     if ($TenantId) { $connectParams['Tenant'] = $TenantId }
     if ($SubscriptionId) { $connectParams['Subscription'] = $SubscriptionId }
     if ($UseManagedIdentity) { $connectParams['Identity'] = $true } elseif ($UseDeviceCode) { $connectParams['UseDeviceAuthentication'] = $true }
-    $null = Connect-AzAccount @connectParams
+    try {
+        $null = Connect-AzAccount @connectParams
+    }
+    catch {
+        $errMsg = $_.Exception.Message
+        $isSubscriptionError = Test-SubscriptionErrorMessage -Message $errMsg
+        $isTenantError = Test-TenantErrorMessage -Message $errMsg
+        if (-not $isSubscriptionError -and -not $isTenantError) { throw }
+        if ($isTenantError) {
+            Write-Log -Level 'WARN' -Message 'Tenant could not be resolved automatically. Attempting to authenticate and list available tenants.'
+            $tenantFallbackParams = @{ Environment=$environmentObject.Name; Scope='Process'; ErrorAction='Stop' }
+            if ($UseManagedIdentity) { $tenantFallbackParams['Identity'] = $true } elseif ($UseDeviceCode) { $tenantFallbackParams['UseDeviceAuthentication'] = $true }
+            $null = Connect-AzAccount @tenantFallbackParams
+            $selectedTenantId = Select-AzTenantInteractive
+            $tenantReconnectParams = @{ Environment=$environmentObject.Name; Scope='Process'; ErrorAction='Stop'; Tenant=$selectedTenantId }
+            if ($SubscriptionId) { $tenantReconnectParams['Subscription'] = $SubscriptionId }
+            if ($UseManagedIdentity) { $tenantReconnectParams['Identity'] = $true } elseif ($UseDeviceCode) { $tenantReconnectParams['UseDeviceAuthentication'] = $true }
+            try {
+                $null = Connect-AzAccount @tenantReconnectParams
+            }
+            catch {
+                $reconnectErr = $_.Exception.Message
+                $isSubErrorAfterTenant = Test-SubscriptionErrorMessage -Message $reconnectErr
+                if (-not $isSubErrorAfterTenant) { throw }
+                $subFallback = @{ Environment=$environmentObject.Name; Scope='Process'; ErrorAction='Stop'; Tenant=$selectedTenantId }
+                if ($UseManagedIdentity) { $subFallback['Identity'] = $true } elseif ($UseDeviceCode) { $subFallback['UseDeviceAuthentication'] = $true }
+                $null = Connect-AzAccount @subFallback
+                $selectedSubId = Select-AzSubscriptionInteractive
+                Set-TargetSubscription -TargetSubscriptionId $selectedSubId
+            }
+        }
+        else {
+            Write-Log -Level 'WARN' -Message 'Subscription could not be resolved. Attempting to authenticate without a specific subscription and list available subscriptions.'
+            $fallbackParams = @{ Environment=$environmentObject.Name; Scope='Process'; ErrorAction='Stop' }
+            if ($TenantId) { $fallbackParams['Tenant'] = $TenantId }
+            if ($UseManagedIdentity) { $fallbackParams['Identity'] = $true } elseif ($UseDeviceCode) { $fallbackParams['UseDeviceAuthentication'] = $true }
+            $null = Connect-AzAccount @fallbackParams
+            $selectedSubId = Select-AzSubscriptionInteractive
+            Set-TargetSubscription -TargetSubscriptionId $selectedSubId
+        }
+    }
     $script:SessionState.AuthenticatedByScript = $true
-    if ($SubscriptionId) { Set-TargetSubscription -TargetSubscriptionId $SubscriptionId }
+    if ($SubscriptionId) {
+        $ctx = Get-CurrentAzContextSafe
+        if ($null -eq $ctx -or $ctx.SubscriptionId -ne $SubscriptionId) { Set-TargetSubscription -TargetSubscriptionId $SubscriptionId }
+    }
     $currentContext = Get-CurrentAzContextSafe
     if ($null -eq $currentContext) { throw 'Authentication completed but no Azure context is available. Re-run the command and confirm that the selected account can access the requested tenant or subscription.' }
     Write-Log -Level 'INFO' -Message 'Authenticated Azure context.' -Data $currentContext
