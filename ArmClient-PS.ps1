@@ -360,6 +360,18 @@ function Add-BundledModulesToPsModulePath {
     $script:SessionState.BundledModulePathAdded = $true
 }
 
+function Test-IsWindowsPlatform { [CmdletBinding()] param() ([Environment]::OSVersion.Platform -eq [PlatformID]::Win32NT) }
+
+function Clear-ModuleZoneIdentifier {
+    [CmdletBinding()] param([Parameter(Mandatory=$true)][string]$ModuleBase)
+    if (-not (Test-IsWindowsPlatform)) { return }
+    if (-not (Get-Command -Name Unblock-File -ErrorAction SilentlyContinue)) { return }
+    foreach ($file in @(Get-ChildItem -LiteralPath $ModuleBase -Recurse -File -ErrorAction SilentlyContinue)) {
+        try { Unblock-File -LiteralPath $file.FullName -ErrorAction Stop }
+        catch { Write-Log -Level 'DEBUG' -Message "Unable to unblock file '$($file.FullName)' before module import." -Data $_.Exception.Message }
+    }
+}
+
 function Import-ResolvedModule {
     [CmdletBinding()] param([Parameter(Mandatory=$true)][pscustomobject]$ResolutionItem)
     $queue = [Collections.Generic.List[object]]::new(); if ($ResolutionItem.PreferredCandidate) { $queue.Add($ResolutionItem.PreferredCandidate) }; if ($ResolutionItem.FallbackCandidate -and ($ResolutionItem.PreferredCandidate -eq $null -or $ResolutionItem.FallbackCandidate.ManifestPath -ne $ResolutionItem.PreferredCandidate.ManifestPath)) { $queue.Add($ResolutionItem.FallbackCandidate) }
@@ -379,6 +391,7 @@ function Import-ResolvedModule {
                     Test-FileHashManifest -RelativePaths ($moduleEntries | % { [string]$_.path })
                 }
             }
+            Clear-ModuleZoneIdentifier -ModuleBase $candidate.ModuleBase
             if ($EnforceSignatureValidation) { $signable = Get-SignableFiles -Path $candidate.ModuleBase; if ($signable.Count -lt 1) { throw "Signature validation was requested, but no signable files were found for module '$($candidate.Name)'." }; Test-AuthenticodeIfRequested -Paths $signable }
             Import-Module -Name $candidate.ManifestPath -Force -DisableNameChecking -Scope Global -WarningAction SilentlyContinue | Out-Null
             $ResolutionItem.SelectedCandidate = $candidate
