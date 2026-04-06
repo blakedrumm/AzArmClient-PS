@@ -32,6 +32,8 @@ $buildScript = Join-Path $repoRoot 'Build-BundledModules.ps1'
 $mainScript = Join-Path $repoRoot 'ArmClient-PS.ps1'
 $versionsManifest = Join-Path $repoRoot 'Manifest' 'Versions.json'
 
+# Resolve all repo-owned entry points up front so the workflow fails fast if it
+# is executed from an unexpected checkout layout.
 if (-not (Test-Path -LiteralPath $buildScript -PathType Leaf)) {
     throw "Build script not found at '$buildScript'."
 }
@@ -67,6 +69,8 @@ foreach ($match in $moduleMatches) {
 
     Write-Output "  Latest available: $latestVersion"
 
+    # Only queue true upgrades; equal or older versions are left untouched so
+    # automated update runs remain idempotent.
     if ([version]$latestVersion -gt [version]$currentVersion) {
         Write-Output "  >> UPDATE AVAILABLE: $currentVersion -> $latestVersion"
         $updates += [pscustomobject]@{
@@ -101,6 +105,8 @@ Write-Output '--- Updating pinned versions in Build-BundledModules.ps1 ---'
 $updatedBuildContent = $buildContent
 foreach ($update in $updates) {
     $oldEntry = $update.MatchValue
+    # Replace the exact pinned module entry that was parsed earlier so the
+    # update stays constrained to the intended requirement line.
     $newEntry = $oldEntry.Replace("Version='$($update.OldVersion)'", "Version='$($update.NewVersion)'")
     $updatedBuildContent = $updatedBuildContent.Replace($oldEntry, $newEntry)
     Write-Output "  Updated $($update.Name): $($update.OldVersion) -> $($update.NewVersion)"
@@ -119,6 +125,8 @@ if (Test-Path -LiteralPath $versionsManifest -PathType Leaf) {
     $currentToolVersion = $versionsData.tool.version
 }
 
+# The maintenance workflow treats a module refresh as a patch-level tool change
+# because the packaged contents changed even when the script interface did not.
 $versionParts = $currentToolVersion.Split('.')
 $major = [int]$versionParts[0]
 $minor = [int]$versionParts[1]
@@ -174,6 +182,8 @@ Set-Content -LiteralPath $mainScript -Value $mainContent -NoNewline -Encoding UT
 Write-Output ''
 Write-Output '--- Running Build-BundledModules.ps1 -Clean -SkipSigning ---'
 
+# The rebuild step is what actually refreshes Modules/ and regenerates the
+# manifests after the pinned versions and tool version have been updated.
 Push-Location $repoRoot
 try {
     & $buildScript -ToolVersion $newToolVersion -Clean -SkipSigning -Force

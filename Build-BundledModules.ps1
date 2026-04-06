@@ -61,6 +61,7 @@ $script:Configuration = [ordered]@{
 $script:ScriptPath = if ($PSCommandPath) { $PSCommandPath } elseif ($MyInvocation.MyCommand.Path) { $MyInvocation.MyCommand.Path } else { Join-Path (Get-Location).Path $script:Configuration.ScriptName }
 $script:BuildState = [ordered]@{ ScriptRoot=$null; OutputRoot=$null; ModulesPath=$null; ManifestPath=$null; LogsPath=$null; LogFilePath=$null }
 
+# General build helpers for path normalization, logging, and safe cleanup.
 function Get-ScriptRoot { [CmdletBinding()] param() (Split-Path -Path $script:ScriptPath -Parent) }
 function Ensure-Directory { [CmdletBinding()] param([Parameter(Mandatory=$true)][string]$Path) if(-not (Test-Path -LiteralPath $Path)){ $null = New-Item -Path $Path -ItemType Directory -Force } }
 function Get-SafeFullPath { [CmdletBinding()] param([Parameter(Mandatory=$true)][string]$Path) ([IO.Path]::GetFullPath($Path)) }
@@ -99,11 +100,15 @@ function Remove-GeneratedFileSafe {
         Write-Log -Level 'DEBUG' -Message "Direct removal failed for '$Path'. Attempting overwrite cleanup." -Data $_.Exception.Message
     }
 
+    # If a file cannot be removed directly, overwrite its contents so a stale
+    # generated artifact is not accidentally reused by a later build step.
     Set-Content -LiteralPath $Path -Value $null -Encoding UTF8 -ErrorAction Stop
 }
 
 function Initialize-BuildFolders {
     [CmdletBinding()] param()
+    # Default to building in-place, but allow maintainers to redirect the output
+    # tree to another location when needed.
     $script:BuildState.ScriptRoot = Get-ScriptRoot
     $script:BuildState.OutputRoot = if($OutputRoot){ Get-SafeFullPath -Path $OutputRoot } else { $script:BuildState.ScriptRoot }
     $script:BuildState.ModulesPath = if($ModulesPath){ Get-SafeFullPath -Path $ModulesPath } else { Join-Path $script:BuildState.OutputRoot $script:Configuration.DefaultModulesFolderName }
@@ -116,6 +121,8 @@ function Initialize-BuildFolders {
 
 function Remove-ExistingBundledModules {
     [CmdletBinding()] param()
+    # Guard cleanup operations so a bad path value cannot delete content outside
+    # the chosen build root.
     Assert-PathUnderRoot -Path $script:BuildState.ModulesPath -Root $script:BuildState.OutputRoot
     Assert-PathUnderRoot -Path $script:BuildState.ManifestPath -Root $script:BuildState.OutputRoot
     if (Test-Path -LiteralPath $script:BuildState.ModulesPath) { Get-ChildItem -LiteralPath $script:BuildState.ModulesPath -Force | Remove-Item -Recurse -Force }
@@ -133,6 +140,8 @@ function Save-RequiredModules {
         if (($Clean -or $Force) -and (Test-Path -LiteralPath $targetRoot)) { Assert-PathUnderRoot -Path $targetRoot -Root $script:BuildState.OutputRoot; Remove-Item -LiteralPath $targetRoot -Recurse -Force }
         Write-Log -Level 'INFO' -Message ('Saving module {0} {1} from {2}.' -f $requirement.Name,$requirement.Version,$requirement.Repository)
         if ($saveCommand -eq 'Save-PSResource') {
+            # Prefer PSResourceGet when available, but retain Save-Module support
+            # so maintainers can build on older environments too.
             $params = @{ Name=$requirement.Name; Version=$requirement.Version; Repository=$requirement.Repository; Path=$script:BuildState.ModulesPath; ErrorAction='Stop' }
             $command = Get-Command -Name Save-PSResource
             if ($command.Parameters.ContainsKey('TrustRepository')) { $params['TrustRepository'] = $true }
@@ -176,6 +185,8 @@ function Resolve-BundledDependencies {
     [CmdletBinding()] param()
     $requiredLookup = @{}
     foreach ($requirement in $script:Configuration.RequiredModules) { $requiredLookup["$($requirement.Name)|$($requirement.Version)"] = $true }
+    # Scan every downloaded module manifest so the versions manifest reflects
+    # both explicitly pinned modules and dependencies pulled in transitively.
     $modules = foreach ($manifestFile in @(Get-ChildItem -LiteralPath $script:BuildState.ModulesPath -Recurse -Filter '*.psd1' -File)) {
         $manifestData = Import-ModuleManifestDataSafe -ManifestPath $manifestFile.FullName
         $moduleVersion = Get-ManifestValueSafe -ManifestData $manifestData -Name 'ModuleVersion'
@@ -225,6 +236,8 @@ function Set-ToolFileSignatures {
     [CmdletBinding()] param()
     if ($SkipSigning -or [string]::IsNullOrWhiteSpace($CodeSigningThumbprint)) { Write-Log -Level 'INFO' -Message 'Signing was skipped.'; return }
     $certificate = Find-CodeSigningCertificate -Thumbprint $CodeSigningThumbprint
+    # Only sign the repo-owned entry-point scripts. Bundled module files keep
+    # whatever signatures were provided by the module publisher.
     foreach ($filePath in @((Join-Path $script:BuildState.OutputRoot $script:Configuration.ToolScriptName),(Join-Path $script:BuildState.OutputRoot $script:Configuration.ScriptName))) {
         if (-not (Test-Path -LiteralPath $filePath -PathType Leaf)) { throw "Unable to sign missing file '$filePath'. Build the package contents first and then retry signing." }
         $signatureResult = Set-AuthenticodeSignature -FilePath $filePath -Certificate $certificate -ErrorAction Stop
@@ -264,6 +277,8 @@ function Get-NormalizedFileHash {
     [CmdletBinding()] param([Parameter(Mandatory=$true)][string]$LiteralPath, [string]$Algorithm = 'SHA256')
     $ext = [IO.Path]::GetExtension($LiteralPath).ToLowerInvariant()
     if ($script:Configuration.TextFileExtensions -contains $ext) {
+        # Match runtime hashing behavior exactly so the generated manifest can be
+        # verified later by ArmClient-PS.ps1 on any supported platform.
         $bytes = [IO.File]::ReadAllBytes($LiteralPath)
         $normalized = [Collections.Generic.List[byte]]::new($bytes.Length)
         for ($i = 0; $i -lt $bytes.Length; $i++) {
@@ -286,6 +301,8 @@ function New-FileHashManifest {
         notes         = 'Files.sha256.json intentionally does not hash itself. Text-file hashes are computed after normalizing CRLF to LF for cross-platform consistency.'
         files         = @(
             foreach ($item in $FileInventory) {
+                # Hash every packaged file except the hash manifest itself, which
+                # necessarily cannot contain a hash of its own final contents.
                 $hash = Get-NormalizedFileHash -LiteralPath $item.FullPath -Algorithm $script:Configuration.FileHashAlgorithm
                 [ordered]@{ path=$item.RelativePath; algorithm=$script:Configuration.FileHashAlgorithm; hash=$hash; required=$true }
             }
@@ -299,6 +316,8 @@ function New-FileHashManifest {
 
 function Test-BuildOutput {
     [CmdletBinding()] param([Parameter(Mandatory=$true)][object[]]$ResolvedModules)
+    # Final validation ensures the output tree contains the package structure
+    # the runtime script expects to find after redistribution.
     foreach ($path in @($script:BuildState.OutputRoot,$script:BuildState.ModulesPath,$script:BuildState.ManifestPath)) { if (-not (Test-Path -LiteralPath $path)) { throw "Expected build path '$path' is missing. Confirm the maintainer build has permission to create package folders in the selected output root." } }
     foreach ($requirement in $script:Configuration.RequiredModules) {
         $match = $ResolvedModules | Where-Object { $_.Name -eq $requirement.Name -and $_.Version -eq $requirement.Version }
@@ -312,6 +331,8 @@ function Test-BuildOutput {
 
 function Invoke-BundledModuleBuild {
     [CmdletBinding()] param()
+    # Run the build in the same order the runtime depends on: create folders,
+    # download modules, capture manifests, sign tool scripts, then validate.
     Initialize-BuildFolders
     if ($Clean) { Remove-ExistingBundledModules; Ensure-Directory -Path $script:BuildState.ModulesPath; Ensure-Directory -Path $script:BuildState.ManifestPath }
     Save-RequiredModules

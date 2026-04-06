@@ -112,6 +112,8 @@ $script:SessionState = [ordered]@{
     BundledModulePathAdded = $false
 }
 
+# General helpers used by the rest of the script for path safety, directory
+# creation, and log output.
 function Get-ScriptRoot { [CmdletBinding()] param() (Split-Path -Path $script:ScriptPath -Parent) }
 function Ensure-Directory { [CmdletBinding()] param([Parameter(Mandatory=$true)][string]$Path) if (-not (Test-Path -LiteralPath $Path)) { $null = New-Item -Path $Path -ItemType Directory -Force } }
 function ConvertTo-NormalizedRelativePath { [CmdletBinding()] param([Parameter(Mandatory=$true)][string]$Path) $Path.Replace('/','\').TrimStart('.').TrimStart('\').ToLowerInvariant() }
@@ -120,6 +122,8 @@ function Get-RelativePathFromRoot { [CmdletBinding()] param([Parameter(Mandatory
 function Redact-SensitiveText {
     [CmdletBinding()] param([AllowNull()][string]$Text)
     if ([string]::IsNullOrWhiteSpace($Text)) { return $Text }
+    # Match common credential/token shapes across plain text, JSON, and error
+    # messages so logs stay useful without exposing secrets.
     $patterns = @(
         '(?i)(Authorization\s*[:=]\s*)(Bearer\s+)?[^\r\n;]+',
         '(?i)("?(authorization|access[_-]?token|refresh[_-]?token|id[_-]?token|client[_-]?secret|secret|password|assertion|cookie|set-cookie)"?\s*[:=]\s*")[^"]+(")',
@@ -195,6 +199,8 @@ function Get-NormalizedFileHash {
     [CmdletBinding()] param([Parameter(Mandatory=$true)][string]$LiteralPath, [string]$Algorithm = 'SHA256')
     $ext = [IO.Path]::GetExtension($LiteralPath).ToLowerInvariant()
     if ($script:Configuration.TextFileExtensions -contains $ext) {
+        # Normalize line endings before hashing text files so the same packaged
+        # content produces the same manifest hash on Windows and non-Windows hosts.
         $bytes = [IO.File]::ReadAllBytes($LiteralPath)
         $normalized = [Collections.Generic.List[byte]]::new($bytes.Length)
         for ($i = 0; $i -lt $bytes.Length; $i++) {
@@ -250,6 +256,8 @@ function Test-AuthenticodeIfRequested {
 
 function Test-BundledModuleFiles {
     [CmdletBinding()] param()
+    # Validate the script, build manifest, and all bundled module files before
+    # any imports occur so package tampering is detected early.
     $paths = [Collections.Generic.List[string]]::new()
     $paths.Add($script:Configuration.ScriptName)
     $paths.Add('Build-BundledModules.ps1')
@@ -270,6 +278,8 @@ function New-ModuleInfoObject {
     $manifestData = Import-ModuleManifestDataSafe -ManifestPath $ManifestPath
     if ($null -eq $manifestData) { return $null }
     $moduleVersion = Get-ManifestValueSafe -ManifestData $manifestData -Name 'ModuleVersion'
+    # PowerShell manifests can express RequiredModules in multiple shapes. This
+    # block normalizes them into a simple list of dependency names.
     $requiredModules = foreach ($requiredModule in @(Get-ManifestValueSafe -ManifestData $manifestData -Name 'RequiredModules')) {
         if ($null -eq $requiredModule) { continue }
         if ($requiredModule -is [string]) { $requiredModule }
@@ -319,6 +329,8 @@ function Resolve-PreferredModuleVersion {
     [CmdletBinding()] param([Parameter(Mandatory=$true)][string]$ModuleName)
     $bundled = Get-BundledModuleInfoSafe -ModuleName $ModuleName | Select-Object -First 1
     $installed = Get-InstalledModuleInfoSafe -ModuleName $ModuleName | Select-Object -First 1
+    # Auto mode prefers the newer available module while still allowing callers
+    # to force bundled-only or installed-preferred behavior explicitly.
     $mode = if ($PreferBundledModules) { 'PreferBundled' } elseif ($PreferInstalledModules) { 'PreferInstalledWhenNewer' } else { 'Auto' }
     $preferred = $null; $fallback = $null
     if ($PreferBundledModules) { $preferred = $bundled; $fallback = $installed }
@@ -340,6 +352,8 @@ function Get-ResolvedModuleTable {
     if ($versionsManifest -and $versionsManifest.modules) { foreach ($module in @($versionsManifest.modules)) { if ($module.name) { $moduleNames.Add([string]$module.name) } } }
     foreach ($moduleName in ($moduleNames | Sort-Object -Unique)) { Add-ResolvedModuleToTable -Table $table -ModuleName $moduleName }
     $ordered = [Collections.Generic.List[object]]::new(); $visit = @{}
+    # Resolve dependencies depth-first so imports happen in dependency order and
+    # circular references are surfaced with a clear error.
     function Visit-ModuleDependency { param([Parameter(Mandatory=$true)][string]$Name)
         if ($visit[$Name] -eq 'Visited') { return }
         if ($visit[$Name] -eq 'Visiting') { throw "Circular module dependency detected while resolving '$Name'." }
@@ -373,6 +387,7 @@ function Clear-ModuleZoneIdentifier {
 
 function Import-ResolvedModule {
     [CmdletBinding()] param([Parameter(Mandatory=$true)][pscustomobject]$ResolutionItem)
+    # Try the preferred candidate first and only fall back if that import fails.
     $queue = [Collections.Generic.List[object]]::new(); if ($ResolutionItem.PreferredCandidate) { $queue.Add($ResolutionItem.PreferredCandidate) }; if ($ResolutionItem.FallbackCandidate -and ($ResolutionItem.PreferredCandidate -eq $null -or $ResolutionItem.FallbackCandidate.ManifestPath -ne $ResolutionItem.PreferredCandidate.ManifestPath)) { $queue.Add($ResolutionItem.FallbackCandidate) }
     foreach ($candidate in $queue) {
         try {
@@ -384,6 +399,8 @@ function Import-ResolvedModule {
             if ($candidate.Source -eq 'Bundled') {
                 Add-BundledModulesToPsModulePath
                 if (-not $SkipHashValidation) {
+                    # Re-validate just the selected module subtree immediately
+                    # before import to reduce the chance of a tampered module loading.
                     $moduleRelativeRoot = Get-RelativePathFromRoot -FullPath $candidate.ModuleBase
                     $moduleEntries = @((Get-FileHashManifestSafe).files | ? { (ConvertTo-NormalizedRelativePath -Path $_.path).StartsWith((ConvertTo-NormalizedRelativePath -Path $moduleRelativeRoot)) })
                     if ($moduleEntries.Count -lt 1) { throw "Bundled module '$($candidate.Name)' was selected from '$moduleRelativeRoot' but no matching hash manifest entries were found. Rebuild the package manifests before distribution." }
@@ -404,6 +421,9 @@ function Import-ResolvedModule {
 
 function Import-BundledModules { [CmdletBinding()] param() Test-BundledModuleFiles; $resolved = Get-ResolvedModuleTable; $imported = foreach($item in $resolved){ Get-LastPipelineValueSafe -Values @(Import-ResolvedModule -ResolutionItem $item) }; $script:SessionState.ResolvedModules = @($imported | Where-Object { $null -ne $_ }); $script:SessionState.ResolvedModules }
 
+# Authentication helpers. These functions validate identifiers, establish the
+# process-scoped Az context, and recover interactively when tenant or
+# subscription selection cannot be resolved automatically.
 function Test-TenantIdentifier { [CmdletBinding()] param([string]$Value) if([string]::IsNullOrWhiteSpace($Value)){return $true}; if($Value -match '^[0-9a-fA-F-]{36}$'){return $true}; ($Value -match '^[A-Za-z0-9][A-Za-z0-9\.-]*\.[A-Za-z]{2,}$') }
 function Test-SubscriptionIdentifier { [CmdletBinding()] param([string]$Value) if([string]::IsNullOrWhiteSpace($Value)){return $true}; ($Value -match '^[0-9a-fA-F-]{36}$') }
 function Test-SubscriptionErrorMessage { [CmdletBinding()] param([Parameter(Mandatory=$true)][string]$Message) ($Message -like '*does not have access to subscription*') -or ($Message -like '*could not be found*' -and $Message -like '*subscription*') }
@@ -528,6 +548,8 @@ function Connect-ArmClientPs {
     }
     Write-Log -Level 'INFO' -Message "Using Azure environment '$($environmentObject.Name)'."
     if ($NoLogin) {
+        # In -NoLogin mode the script is allowed to reuse an existing context,
+        # but it must not start a new authentication flow.
         $existingContext = Get-CurrentAzContextSafe
         if ($null -eq $existingContext) { throw 'No usable Azure context exists in the current process and -NoLogin was supplied. Remove -NoLogin or sign in first in this session.' }
         if ($SubscriptionId -and $existingContext.SubscriptionId -ne $SubscriptionId) { Set-TargetSubscription -TargetSubscriptionId $SubscriptionId; $existingContext = Get-CurrentAzContextSafe }
@@ -546,6 +568,8 @@ function Connect-ArmClientPs {
         $isTenantError = Test-TenantErrorMessage -Message $errMsg
         if (-not $isSubscriptionError -and -not $isTenantError) { throw }
         if ($isTenantError) {
+            # First connect broadly, then let the user choose a tenant once the
+            # account's available tenants are known to the current session.
             Write-Log -Level 'WARN' -Message 'Tenant could not be resolved automatically. Attempting to authenticate and list available tenants.'
             $tenantFallbackParams = @{ Environment=$environmentObject.Name; Scope='Process'; ErrorAction='Stop' }
             if ($UseManagedIdentity) { $tenantFallbackParams['Identity'] = $true } elseif ($UseDeviceCode) { $tenantFallbackParams['UseDeviceAuthentication'] = $true }
@@ -569,6 +593,8 @@ function Connect-ArmClientPs {
             }
         }
         else {
+            # Use the same recovery pattern for subscription issues: connect
+            # first, then prompt the user with the available subscriptions.
             Write-Log -Level 'WARN' -Message 'Subscription could not be resolved. Attempting to authenticate without a specific subscription and list available subscriptions.'
             $fallbackParams = @{ Environment=$environmentObject.Name; Scope='Process'; ErrorAction='Stop' }
             if ($TenantId) { $fallbackParams['Tenant'] = $TenantId }
@@ -589,6 +615,8 @@ function Connect-ArmClientPs {
     $currentContext
 }
 
+# ARM request helpers. These functions normalize URIs, validate headers/body
+# content, invoke the request, and unwrap ARM-specific response patterns.
 function ConvertFrom-QueryStringSafe { [CmdletBinding()] param([string]$Query) $table=[ordered]@{}; if([string]::IsNullOrWhiteSpace($Query)){return $table}; foreach($pair in ($Query.TrimStart('?') -split '&')){ if([string]::IsNullOrWhiteSpace($pair)){continue}; $name,$value=$pair -split '=',2; $table[[Net.WebUtility]::UrlDecode($name)] = if($null -ne $value){ [Net.WebUtility]::UrlDecode($value) } else { '' } }; $table }
 function ConvertTo-QueryStringSafe { [CmdletBinding()] param([Parameter(Mandatory=$true)][hashtable]$Table) (($Table.Keys | % { '{0}={1}' -f [Net.WebUtility]::UrlEncode([string]$_), [Net.WebUtility]::UrlEncode([string]$Table[$_]) }) -join '&') }
 
@@ -600,6 +628,8 @@ function Resolve-ArmUri {
     if ($null -eq $environmentObject -or [string]::IsNullOrWhiteSpace($environmentObject.ResourceManagerUrl)) { throw "Unable to determine the Resource Manager endpoint for environment '$($context.Environment)'." }
     $resourceManagerUrl = $environmentObject.ResourceManagerUrl.TrimEnd('/')
     if ($RequestUri) {
+        # Absolute URIs are supported, but ARM requests still have to remain
+        # HTTPS-only and include api-version when they target the ARM endpoint.
         if (-not $RequestUri.IsAbsoluteUri) { throw 'The supplied -Uri value must be an absolute HTTPS URI.' }
         if ($RequestUri.Scheme -ne 'https') { throw 'Only HTTPS ARM URIs are supported.' }
         $builder = [System.UriBuilder]::new($RequestUri); $queryTable = ConvertFrom-QueryStringSafe -Query $builder.Query; $resourceManagerHost = ([System.Uri]$resourceManagerUrl).Host
@@ -646,6 +676,7 @@ function Invoke-ArmRequestCore {
     if($Payload){ Write-Log -Level 'DEBUG' -Message 'ARM request payload prepared.' -Data $Payload }
     $response=$null; $manualHeaders=($ValidatedHeaders.Count -gt 0)
     if(-not $manualHeaders){
+        # Use the Az cmdlet path whenever no extra caller headers are needed.
         try {
             $params=@{ Method=$RequestMethod; ErrorAction='Stop' }
             if($Payload){ $params['Payload']=$Payload }
@@ -656,6 +687,8 @@ function Invoke-ArmRequestCore {
             if($_.Exception.PSObject.Properties['Response'] -and $_.Exception.Response){ $response=Read-HttpErrorResponse -Exception $_.Exception -MethodName $RequestMethod -RequestUri $RequestInfo.Uri } else { throw }
         }
     } else {
+        # Fall back to Invoke-WebRequest when custom headers are required so the
+        # script can merge caller headers with an Az-issued bearer token.
         $authHeader=Get-AuthorizationHeaderFromAzContext -ResourceUrl $RequestInfo.ResourceManagerUrl; $webHeaders=@{}; foreach($entry in $authHeader.GetEnumerator()){ $webHeaders[$entry.Key]=$entry.Value }; foreach($entry in $ValidatedHeaders.GetEnumerator()){ $webHeaders[$entry.Key]=$entry.Value }
         try {
             $params=@{ Uri=$RequestInfo.Uri.AbsoluteUri; Method=$RequestMethod; Headers=$webHeaders; ErrorAction='Stop' }
@@ -675,10 +708,13 @@ function Get-LongRunningOperationState { [CmdletBinding()] param([Parameter(Mand
 
 function Wait-ArmLongRunningOperation {
     [CmdletBinding()] param([Parameter(Mandatory=$true)][pscustomobject]$InitialResponse,[Parameter(Mandatory=$true)][pscustomobject]$InitialRequestInfo,[Parameter(Mandatory=$true)][string]$InitialMethod,[Parameter(Mandatory=$true)][hashtable]$ValidatedHeaders)
+    # ARM long-running operations advertise their polling endpoints in response
+    # headers. If neither header exists, the first response is already final.
     $asyncUri = Get-HeaderValue -Headers $InitialResponse.Headers -Name 'Azure-AsyncOperation'; if(-not $asyncUri){ $asyncUri = Get-HeaderValue -Headers $InitialResponse.Headers -Name 'Operation-Location' }
     $locationUri = Get-HeaderValue -Headers $InitialResponse.Headers -Name 'Location'; if(-not $asyncUri -and -not $locationUri){ return $InitialResponse }
     $pollUri = if($asyncUri){$asyncUri}else{$locationUri}; $deadline=(Get-Date).AddSeconds($script:Configuration.LongRunningTimeoutSeconds); $latestResponse=$InitialResponse
     while((Get-Date) -lt $deadline){
+        # Honor Retry-After when present so polling remains service-friendly.
         $retryAfterValue = Get-HeaderValue -Headers $latestResponse.Headers -Name 'Retry-After'; $delaySeconds = if($retryAfterValue -and ($retryAfterValue -as [int])){ [int]$retryAfterValue } else { $script:Configuration.DefaultPollIntervalSeconds }; if($delaySeconds -lt 1){$delaySeconds=$script:Configuration.DefaultPollIntervalSeconds}
         Write-Log -Level 'INFO' -Message ("Polling long-running ARM operation in {0} second(s)." -f $delaySeconds); Start-Sleep -Seconds $delaySeconds
         $pollRequestInfo=[pscustomobject]@{ Mode='Uri'; Uri=[System.Uri]$pollUri; Path=([System.Uri]$pollUri).PathAndQuery; ResourceManagerUrl=$InitialRequestInfo.ResourceManagerUrl }
@@ -713,6 +749,7 @@ function Show-ResolvedModuleVersionSummary {
 
 function Invoke-ArmClientSelfTest {
     [CmdletBinding()] param()
+    # Self-test verifies local package health without requiring a live ARM call.
     $results = [Collections.Generic.List[object]]::new()
     foreach ($path in @($script:SessionState.ScriptRoot,$script:SessionState.ModulesPath,$script:SessionState.ManifestPath,$script:SessionState.LogsPath,$script:SessionState.OutputPath)) { $results.Add([pscustomobject]@{ Test='PathExists'; Target=$path; Result=(Test-Path -LiteralPath $path) }) }
     if (-not $SkipHashValidation) { Test-BundledModuleFiles; $results.Add([pscustomobject]@{ Test='HashValidation'; Target=(Join-Path $script:SessionState.ManifestPath $script:Configuration.FileHashManifestName); Result=$true }) } else { $results.Add([pscustomobject]@{ Test='HashValidation'; Target='Skipped'; Result=$false }) }
@@ -724,6 +761,8 @@ function Invoke-ArmClientSelfTest {
 
 function Initialize-Environment {
     [CmdletBinding()] param()
+    # Resolve and create runtime folders once so later code can use the shared
+    # session state instead of rebuilding paths repeatedly.
     $script:SessionState.ScriptRoot = Get-ScriptRoot
     $script:SessionState.ModulesPath = Join-Path $script:SessionState.ScriptRoot $script:Configuration.ModulesDirectoryName
     $script:SessionState.ManifestPath = Join-Path $script:SessionState.ScriptRoot $script:Configuration.ManifestDirectoryName
@@ -748,6 +787,8 @@ function Invoke-ArmRequest {
         $payload = Test-JsonContent -Content (Get-Content -LiteralPath $resolvedBodyFile -Raw) -ContentSource 'body file'
     } elseif ($Body) { $payload = Test-JsonContent -Content $Body -ContentSource 'body parameter' }
     if (($Method -in $script:Configuration.AllowedBodyMethods) -and -not $payload) { Write-Log -Level 'WARN' -Message "HTTP method '$Method' was supplied without a JSON body." }
+    # Keep the initial request and final response separate so the same request
+    # path works for both synchronous and long-running ARM operations.
     $initial = Get-LastPipelineValueSafe -Values @(Invoke-ArmRequestCore -RequestMethod $Method -RequestInfo $requestInfo -Payload $payload -ValidatedHeaders $validatedHeaders)
     $final = Get-LastPipelineValueSafe -Values @(Wait-ArmLongRunningOperation -InitialResponse $initial -InitialRequestInfo $requestInfo -InitialMethod $Method -ValidatedHeaders $validatedHeaders)
     $formatted = Format-ArmResponse -Response $final
@@ -757,6 +798,8 @@ function Invoke-ArmRequest {
 
 $completedSuccessfully = $false
 try {
+    # Fail fast on mutually exclusive switches before any file, module, or
+    # authentication work begins.
     if ($UseManagedIdentity -and $UseDeviceCode) { throw 'UseManagedIdentity and UseDeviceCode cannot be used together.' }
     if ($PreferBundledModules -and $PreferInstalledModules) { throw 'PreferBundledModules and PreferInstalledModules cannot be used together.' }
     Initialize-Environment
