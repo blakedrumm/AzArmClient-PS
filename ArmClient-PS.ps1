@@ -88,6 +88,7 @@ $script:Configuration = [ordered]@{
     VersionsManifestName         = 'Versions.json'
     DangerousHeaders             = @('Authorization','Proxy-Authorization','Cookie','Set-Cookie','Content-Length','Host','Connection','Transfer-Encoding')
     AllowedSignatureExtensions   = @('.ps1','.psm1','.psd1')
+    TextFileExtensions           = @('.ps1','.psm1','.psd1','.ps1xml','.json','.txt','.xml')
     AllowedBodyMethods           = @('POST','PUT','PATCH')
     CorrelationHeaderNames       = @('x-ms-correlation-request-id','x-ms-client-request-id','x-ms-routing-request-id')
     RequestHeaderNames           = @('x-ms-request-id','x-ms-arm-service-request-id','x-ms-service-request-id')
@@ -190,6 +191,23 @@ function Get-VersionsManifestSafe {
     $script:SessionState.VersionsManifest
 }
 
+function Get-NormalizedFileHash {
+    [CmdletBinding()] param([Parameter(Mandatory=$true)][string]$LiteralPath, [string]$Algorithm = 'SHA256')
+    $ext = [IO.Path]::GetExtension($LiteralPath).ToLowerInvariant()
+    if ($script:Configuration.TextFileExtensions -contains $ext) {
+        $bytes = [IO.File]::ReadAllBytes($LiteralPath)
+        $normalized = [Collections.Generic.List[byte]]::new($bytes.Length)
+        for ($i = 0; $i -lt $bytes.Length; $i++) {
+            if ($bytes[$i] -eq 0x0D -and ($i + 1) -lt $bytes.Length -and $bytes[$i + 1] -eq 0x0A) { continue }
+            $normalized.Add($bytes[$i])
+        }
+        $hashImpl = [Security.Cryptography.HashAlgorithm]::Create($Algorithm)
+        try { $hashBytes = $hashImpl.ComputeHash($normalized.ToArray()) } finally { $hashImpl.Dispose() }
+        return ([BitConverter]::ToString($hashBytes).Replace('-','')).ToUpperInvariant()
+    }
+    (Get-FileHash -LiteralPath $LiteralPath -Algorithm $Algorithm).Hash.ToUpperInvariant()
+}
+
 function Test-FileHashManifest {
     [CmdletBinding()] param([string[]]$RelativePaths)
     if ($SkipHashValidation) { Write-Log -Level 'WARN' -Message 'Hash validation was skipped because -SkipHashValidation was supplied.'; return }
@@ -204,7 +222,7 @@ function Test-FileHashManifest {
         $fullPath = Join-Path $script:SessionState.ScriptRoot ([string]$entry.path)
         if (-not (Test-Path -LiteralPath $fullPath)) { throw "Hash validation failed because '$($entry.path)' is missing. The package is incomplete or was modified after packaging." }
         $hashAlgorithm = if ($entry.algorithm) { [string]$entry.algorithm } else { 'SHA256' }
-        $actual = (Get-FileHash -LiteralPath $fullPath -Algorithm $hashAlgorithm).Hash.ToUpperInvariant()
+        $actual = Get-NormalizedFileHash -LiteralPath $fullPath -Algorithm $hashAlgorithm
         $expected = ([string]$entry.hash).ToUpperInvariant()
         if ($actual -ne $expected) { throw "Hash validation failed for '$($entry.path)'. The package contents no longer match the trusted manifest. Rebuild or replace the package before continuing." }
     }

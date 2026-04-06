@@ -52,6 +52,7 @@ $script:Configuration = [ordered]@{
     VersionsManifestName      = 'Versions.json'
     FileHashManifestName      = 'Files.sha256.json'
     FileHashAlgorithm         = 'SHA256'
+    TextFileExtensions        = @('.ps1','.psm1','.psd1','.ps1xml','.json','.txt','.xml')
     RequiredModules           = @(
         [pscustomobject]@{ Name='Az.Accounts'; Version='5.3.3'; Repository='PSGallery' }
     )
@@ -259,6 +260,22 @@ function Get-ModuleFileInventory {
     foreach ($moduleFile in @(Get-ChildItem -LiteralPath $script:BuildState.ModulesPath -Recurse -File)) { $inventory.Add([pscustomobject]@{ FullPath=$moduleFile.FullName; RelativePath=(Get-RelativePathFromBase -BasePath $script:BuildState.OutputRoot -FullPath $moduleFile.FullName).Replace('/','\') }) }
     @($inventory | Sort-Object RelativePath -Unique)
 }
+function Get-NormalizedFileHash {
+    [CmdletBinding()] param([Parameter(Mandatory=$true)][string]$LiteralPath, [string]$Algorithm = 'SHA256')
+    $ext = [IO.Path]::GetExtension($LiteralPath).ToLowerInvariant()
+    if ($script:Configuration.TextFileExtensions -contains $ext) {
+        $bytes = [IO.File]::ReadAllBytes($LiteralPath)
+        $normalized = [Collections.Generic.List[byte]]::new($bytes.Length)
+        for ($i = 0; $i -lt $bytes.Length; $i++) {
+            if ($bytes[$i] -eq 0x0D -and ($i + 1) -lt $bytes.Length -and $bytes[$i + 1] -eq 0x0A) { continue }
+            $normalized.Add($bytes[$i])
+        }
+        $hashImpl = [Security.Cryptography.HashAlgorithm]::Create($Algorithm)
+        try { $hashBytes = $hashImpl.ComputeHash($normalized.ToArray()) } finally { $hashImpl.Dispose() }
+        return ([BitConverter]::ToString($hashBytes).Replace('-','')).ToUpperInvariant()
+    }
+    (Get-FileHash -LiteralPath $LiteralPath -Algorithm $Algorithm).Hash.ToUpperInvariant()
+}
 function New-FileHashManifest {
     [CmdletBinding()] param([Parameter(Mandatory=$true)][object[]]$FileInventory)
     if ($SkipHashGeneration) { Write-Log -Level 'WARN' -Message 'Hash manifest generation was skipped.'; return $null }
@@ -266,11 +283,11 @@ function New-FileHashManifest {
         schemaVersion = '1.0'
         generatedUtc  = (Get-Date).ToUniversalTime().ToString('o')
         algorithm     = $script:Configuration.FileHashAlgorithm
-        notes         = 'Files.sha256.json intentionally does not hash itself.'
+        notes         = 'Files.sha256.json intentionally does not hash itself. Text-file hashes are computed after normalizing CRLF to LF for cross-platform consistency.'
         files         = @(
             foreach ($item in $FileInventory) {
-                $hash = Get-FileHash -LiteralPath $item.FullPath -Algorithm $script:Configuration.FileHashAlgorithm
-                [ordered]@{ path=$item.RelativePath; algorithm=$script:Configuration.FileHashAlgorithm; hash=$hash.Hash.ToUpperInvariant(); required=$true }
+                $hash = Get-NormalizedFileHash -LiteralPath $item.FullPath -Algorithm $script:Configuration.FileHashAlgorithm
+                [ordered]@{ path=$item.RelativePath; algorithm=$script:Configuration.FileHashAlgorithm; hash=$hash; required=$true }
             }
         )
     }
