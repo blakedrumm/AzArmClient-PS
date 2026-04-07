@@ -16,6 +16,21 @@ Full ARM URI to invoke.
 .PARAMETER RelativePath
 Relative ARM path such as /subscriptions/<id>/resourceGroups/<name>.
 
+.PARAMETER Operation
+Predefined ARM operation preset name that resolves the request method, path template, and default api-version.
+
+.PARAMETER OperationParameters
+Hashtable of values used to fill placeholders for a predefined operation preset.
+
+.PARAMETER ListOperations
+Outputs the catalog of built-in operation presets.
+
+.PARAMETER ShowOperationDetails
+Outputs the full definition for the selected operation preset.
+
+.PARAMETER ApiVersions
+Outputs the relevant API versions for the selected operation preset.
+
 .NOTES
 Script Name: ArmClient-PS.ps1
 Description: Secure ARM-focused REST support utility that uses bundled Az modules.
@@ -33,7 +48,10 @@ param(
     [Parameter()][ValidateSet('GET','POST','PUT','PATCH','DELETE')][string]$Method='GET',
     [Parameter(ParameterSetName='RequestByUri')][System.Uri]$Uri,
     [Parameter(ParameterSetName='RequestByRelativePath')][string]$RelativePath,
+    [Parameter()][string]$Operation,
+    [Parameter()][hashtable]$OperationParameters,
     [Parameter()][string]$ApiVersion,
+    [Parameter()][switch]$ApiVersions,
     [Parameter()][string]$Body,
     [Parameter()][string]$BodyFile,
     [Parameter()][string]$OutputFile,
@@ -54,6 +72,8 @@ param(
     [Parameter()][switch]$PreferInstalledModules,
     [Parameter()][switch]$SelfTest,
     [Parameter()][switch]$ShowContext,
+    [Parameter()][switch]$ListOperations,
+    [Parameter()][switch]$ShowOperationDetails,
     [Parameter()][switch]$ShowBundledModuleVersions,
     [Parameter()][switch]$ShowResolvedModuleVersions,
     [Parameter()][switch]$ToolVersion
@@ -84,6 +104,7 @@ $script:Configuration = [ordered]@{
     ModulesDirectoryName         = 'Modules'
     DefaultLogDirectoryName      = 'Logs'
     DefaultOutputDirectoryName   = 'Output'
+    ProviderMetadataApiVersion   = '2021-04-01'
     FileHashManifestName         = 'Files.sha256.json'
     VersionsManifestName         = 'Versions.json'
     DangerousHeaders             = @('Authorization','Proxy-Authorization','Cookie','Set-Cookie','Content-Length','Host','Connection','Transfer-Encoding')
@@ -104,6 +125,7 @@ $script:SessionState = [ordered]@{
     LogFilePath            = $null
     FileHashManifest       = $null
     VersionsManifest       = $null
+    ProviderMetadataCache  = @{}
     DebugEnabled           = [bool]$DebugLogging
     AuthenticatedByScript  = $false
     ShouldClearContext     = [bool]$ClearContextOnExit
@@ -111,6 +133,7 @@ $script:SessionState = [ordered]@{
     ResolvedModules        = @()
     BundledModulePathAdded = $false
 }
+$script:SessionState['BoundParameterNames'] = @($PSBoundParameters.Keys)
 
 # General helpers used by the rest of the script for path safety, directory
 # creation, and log output.
@@ -118,6 +141,8 @@ function Get-ScriptRoot { [CmdletBinding()] param() (Split-Path -Path $script:Sc
 function Ensure-Directory { [CmdletBinding()] param([Parameter(Mandatory=$true)][string]$Path) if (-not (Test-Path -LiteralPath $Path)) { $null = New-Item -Path $Path -ItemType Directory -Force } }
 function ConvertTo-NormalizedRelativePath { [CmdletBinding()] param([Parameter(Mandatory=$true)][string]$Path) $Path.Replace('/','\').TrimStart('.').TrimStart('\').ToLowerInvariant() }
 function Get-RelativePathFromRoot { [CmdletBinding()] param([Parameter(Mandatory=$true)][string]$FullPath) $root=[IO.Path]::GetFullPath($script:SessionState.ScriptRoot); $path=[IO.Path]::GetFullPath($FullPath); if(-not $path.StartsWith($root,[StringComparison]::OrdinalIgnoreCase)){ throw "Path '$FullPath' is outside of script root '$root'." }; $path.Substring($root.Length).TrimStart('\','/') }
+function Get-HashtableValueIgnoreCase { [CmdletBinding()] param([AllowNull()][Collections.IDictionary]$Table,[Parameter(Mandatory=$true)][string]$Key) if($null -eq $Table){return $null}; foreach($entryKey in $Table.Keys){ if([string]::Equals([string]$entryKey,$Key,[StringComparison]::OrdinalIgnoreCase)){ return $Table[$entryKey] } }; $null }
+function Get-RequestedSubscriptionIdSafe { [CmdletBinding()] param() if($SubscriptionId){ return $SubscriptionId }; $requested = Get-HashtableValueIgnoreCase -Table $OperationParameters -Key 'subscriptionId'; if($requested){ return [string]$requested }; $null }
 
 function Redact-SensitiveText {
     [CmdletBinding()] param([AllowNull()][string]$Text)
@@ -537,8 +562,9 @@ function Select-AzSubscriptionInteractive {
 
 function Connect-ArmClientPs {
     [CmdletBinding()] param()
+    $requestedSubscriptionId = Get-RequestedSubscriptionIdSafe
     if (-not (Test-TenantIdentifier -Value $TenantId)) { throw "TenantId '$TenantId' is not a valid GUID or verified domain name." }
-    if (-not (Test-SubscriptionIdentifier -Value $SubscriptionId)) { throw "SubscriptionId '$SubscriptionId' is not a valid GUID." }
+    if (-not (Test-SubscriptionIdentifier -Value $requestedSubscriptionId)) { throw "SubscriptionId '$requestedSubscriptionId' is not a valid GUID." }
     $environmentObject = Get-AzEnvironmentSafe -Name $script:SessionState.SelectedEnvironment
     if ($null -eq $environmentObject) {
         if ($script:Configuration.DeprecatedEnvironments -contains $script:SessionState.SelectedEnvironment) { throw "Azure environment '$($script:SessionState.SelectedEnvironment)' is deprecated and is not available in the resolved Az.Accounts runtime on this machine. Choose another environment or update the bundled module set." }
@@ -552,12 +578,12 @@ function Connect-ArmClientPs {
         # but it must not start a new authentication flow.
         $existingContext = Get-CurrentAzContextSafe
         if ($null -eq $existingContext) { throw 'No usable Azure context exists in the current process and -NoLogin was supplied. Remove -NoLogin or sign in first in this session.' }
-        if ($SubscriptionId -and $existingContext.SubscriptionId -ne $SubscriptionId) { Set-TargetSubscription -TargetSubscriptionId $SubscriptionId; $existingContext = Get-CurrentAzContextSafe }
+        if ($requestedSubscriptionId -and $existingContext.SubscriptionId -ne $requestedSubscriptionId) { Set-TargetSubscription -TargetSubscriptionId $requestedSubscriptionId; $existingContext = Get-CurrentAzContextSafe }
         return $existingContext
     }
     $connectParams = @{ Environment=$environmentObject.Name; Scope='Process'; ErrorAction='Stop'; SkipContextPopulation=$true; MaxContextPopulation=1 }
     if ($TenantId) { $connectParams['Tenant'] = $TenantId }
-    if ($SubscriptionId) { $connectParams['Subscription'] = $SubscriptionId }
+    if ($requestedSubscriptionId) { $connectParams['Subscription'] = $requestedSubscriptionId }
     if ($UseManagedIdentity) { $connectParams['Identity'] = $true } elseif ($UseDeviceCode) { $connectParams['UseDeviceAuthentication'] = $true }
     try {
         $null = Connect-AzAccount @connectParams
@@ -576,7 +602,7 @@ function Connect-ArmClientPs {
             $null = Connect-AzAccount @tenantFallbackParams
             $selectedTenantId = Select-AzTenantInteractive
             $tenantReconnectParams = @{ Environment=$environmentObject.Name; Scope='Process'; ErrorAction='Stop'; Tenant=$selectedTenantId }
-            if ($SubscriptionId) { $tenantReconnectParams['Subscription'] = $SubscriptionId }
+            if ($requestedSubscriptionId) { $tenantReconnectParams['Subscription'] = $requestedSubscriptionId }
             if ($UseManagedIdentity) { $tenantReconnectParams['Identity'] = $true } elseif ($UseDeviceCode) { $tenantReconnectParams['UseDeviceAuthentication'] = $true }
             try {
                 $null = Connect-AzAccount @tenantReconnectParams
@@ -605,14 +631,221 @@ function Connect-ArmClientPs {
         }
     }
     $script:SessionState.AuthenticatedByScript = $true
-    if ($SubscriptionId) {
+    if ($requestedSubscriptionId) {
         $ctx = Get-CurrentAzContextSafe
-        if ($null -eq $ctx -or $ctx.SubscriptionId -ne $SubscriptionId) { Set-TargetSubscription -TargetSubscriptionId $SubscriptionId }
+        if ($null -eq $ctx -or $ctx.SubscriptionId -ne $requestedSubscriptionId) { Set-TargetSubscription -TargetSubscriptionId $requestedSubscriptionId }
     }
     $currentContext = Get-CurrentAzContextSafe
     if ($null -eq $currentContext) { throw 'Authentication completed but no Azure context is available. Re-run the command and confirm that the selected account can access the requested tenant or subscription.' }
     Write-Log -Level 'INFO' -Message 'Authenticated Azure context.' -Data $currentContext
     $currentContext
+}
+
+function New-ArmOperationPreset {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory=$true)][string]$Name,
+        [Parameter(Mandatory=$true)][string]$Category,
+        [Parameter(Mandatory=$true)][string]$Description,
+        [Parameter(Mandatory=$true)][ValidateSet('GET','POST','PUT','PATCH','DELETE')][string]$Method,
+        [Parameter(Mandatory=$true)][string]$RelativePathTemplate,
+        [Parameter(Mandatory=$true)][string]$DefaultApiVersion,
+        [string[]]$Aliases,
+        [string]$ProviderNamespace,
+        [string]$ResourceType,
+        [string[]]$RequiredParameters,
+        [string[]]$OptionalParameters,
+        [AllowNull()][object]$DefaultBodyTemplate,
+        [string[]]$KnownApiVersions,
+        [AllowNull()][hashtable]$ExampleParameters,
+        [AllowNull()][object]$ExampleBody,
+        [AllowNull()][string[]]$Notes
+    )
+    [pscustomobject]@{
+        Name                 = $Name
+        Category             = $Category
+        Description          = $Description
+        Method               = $Method
+        RelativePathTemplate = $RelativePathTemplate
+        DefaultApiVersion    = $DefaultApiVersion
+        Aliases              = @($Aliases | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+        ProviderNamespace    = $ProviderNamespace
+        ResourceType         = $ResourceType
+        RequiredParameters   = @($RequiredParameters | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+        OptionalParameters   = @($OptionalParameters | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+        DefaultBodyTemplate  = $DefaultBodyTemplate
+        KnownApiVersions     = @($KnownApiVersions | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+        ExampleParameters    = $ExampleParameters
+        ExampleBody          = $ExampleBody
+        Notes                = @($Notes | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+    }
+}
+
+function Get-ArmOperationPresetCatalog {
+    [CmdletBinding()] param()
+    @(
+        New-ArmOperationPreset -Name 'ArmProvidersList' -Category 'ARM.Core' -Description 'List resource providers available to the current account.' -Method 'GET' -RelativePathTemplate '/providers' -DefaultApiVersion '2021-04-01' -Aliases @('providers','list-providers') -KnownApiVersions @('2021-04-01') -Notes @('Useful for discovering provider namespaces before selecting a more specific operation preset.')
+        New-ArmOperationPreset -Name 'ArmProviderGet' -Category 'ARM.Core' -Description 'Get metadata for a single resource provider.' -Method 'GET' -RelativePathTemplate '/providers/{providerNamespace}' -DefaultApiVersion '2021-04-01' -Aliases @('provider','get-provider') -RequiredParameters @('providerNamespace') -ExampleParameters @{ providerNamespace='Microsoft.Communication' } -KnownApiVersions @('2021-04-01')
+        New-ArmOperationPreset -Name 'ArmSubscriptionGet' -Category 'ARM.Core' -Description 'Get the current or specified subscription resource.' -Method 'GET' -RelativePathTemplate '/subscriptions/{subscriptionId}' -DefaultApiVersion '2022-12-01' -Aliases @('subscription','get-subscription') -RequiredParameters @('subscriptionId') -ExampleParameters @{ subscriptionId='<subscription-id>' } -KnownApiVersions @('2022-12-01')
+        New-ArmOperationPreset -Name 'ArmResourceGroupList' -Category 'ARM.Resources' -Description 'List resource groups in a subscription.' -Method 'GET' -RelativePathTemplate '/subscriptions/{subscriptionId}/resourceGroups' -DefaultApiVersion '2021-04-01' -Aliases @('resource-groups','list-resource-groups') -ProviderNamespace 'Microsoft.Resources' -ResourceType 'resourceGroups' -RequiredParameters @('subscriptionId') -ExampleParameters @{ subscriptionId='<subscription-id>' } -KnownApiVersions @('2021-04-01')
+        New-ArmOperationPreset -Name 'ArmResourceGroupGet' -Category 'ARM.Resources' -Description 'Get a specific resource group.' -Method 'GET' -RelativePathTemplate '/subscriptions/{subscriptionId}/resourceGroups/{resourceGroupName}' -DefaultApiVersion '2021-04-01' -Aliases @('resource-group','get-resource-group') -ProviderNamespace 'Microsoft.Resources' -ResourceType 'resourceGroups' -RequiredParameters @('subscriptionId','resourceGroupName') -ExampleParameters @{ subscriptionId='<subscription-id>'; resourceGroupName='rg-example' } -KnownApiVersions @('2021-04-01')
+        New-ArmOperationPreset -Name 'ArmResourceGroupCreateOrUpdate' -Category 'ARM.Resources' -Description 'Create or update a resource group. Supply a JSON body with location and optional tags.' -Method 'PUT' -RelativePathTemplate '/subscriptions/{subscriptionId}/resourceGroups/{resourceGroupName}' -DefaultApiVersion '2021-04-01' -Aliases @('new-resource-group','set-resource-group') -ProviderNamespace 'Microsoft.Resources' -ResourceType 'resourceGroups' -RequiredParameters @('subscriptionId','resourceGroupName') -ExampleParameters @{ subscriptionId='<subscription-id>'; resourceGroupName='rg-example' } -ExampleBody @{ location='eastus'; tags=@{ environment='dev' } } -KnownApiVersions @('2021-04-01')
+        New-ArmOperationPreset -Name 'ArmResourceGroupDelete' -Category 'ARM.Resources' -Description 'Delete a resource group.' -Method 'DELETE' -RelativePathTemplate '/subscriptions/{subscriptionId}/resourceGroups/{resourceGroupName}' -DefaultApiVersion '2021-04-01' -Aliases @('remove-resource-group','delete-resource-group') -ProviderNamespace 'Microsoft.Resources' -ResourceType 'resourceGroups' -RequiredParameters @('subscriptionId','resourceGroupName') -ExampleParameters @{ subscriptionId='<subscription-id>'; resourceGroupName='rg-example' } -KnownApiVersions @('2021-04-01')
+        New-ArmOperationPreset -Name 'ArmResourcesListByResourceGroup' -Category 'ARM.Resources' -Description 'List resources contained in a resource group.' -Method 'GET' -RelativePathTemplate '/subscriptions/{subscriptionId}/resourceGroups/{resourceGroupName}/resources' -DefaultApiVersion '2021-04-01' -Aliases @('list-resources','resource-group-resources') -ProviderNamespace 'Microsoft.Resources' -ResourceType 'resources' -RequiredParameters @('subscriptionId','resourceGroupName') -ExampleParameters @{ subscriptionId='<subscription-id>'; resourceGroupName='rg-example' } -KnownApiVersions @('2021-04-01')
+        New-ArmOperationPreset -Name 'ArmDeploymentListByResourceGroup' -Category 'ARM.Deployments' -Description 'List ARM deployments for a resource group.' -Method 'GET' -RelativePathTemplate '/subscriptions/{subscriptionId}/resourceGroups/{resourceGroupName}/providers/Microsoft.Resources/deployments' -DefaultApiVersion '2021-04-01' -Aliases @('list-deployments','resource-group-deployments') -ProviderNamespace 'Microsoft.Resources' -ResourceType 'deployments' -RequiredParameters @('subscriptionId','resourceGroupName') -ExampleParameters @{ subscriptionId='<subscription-id>'; resourceGroupName='rg-example' } -KnownApiVersions @('2021-04-01')
+        New-ArmOperationPreset -Name 'ArmDeploymentGetByResourceGroup' -Category 'ARM.Deployments' -Description 'Get a specific ARM deployment in a resource group.' -Method 'GET' -RelativePathTemplate '/subscriptions/{subscriptionId}/resourceGroups/{resourceGroupName}/providers/Microsoft.Resources/deployments/{deploymentName}' -DefaultApiVersion '2021-04-01' -Aliases @('deployment','get-deployment') -ProviderNamespace 'Microsoft.Resources' -ResourceType 'deployments' -RequiredParameters @('subscriptionId','resourceGroupName','deploymentName') -ExampleParameters @{ subscriptionId='<subscription-id>'; resourceGroupName='rg-example'; deploymentName='main' } -KnownApiVersions @('2021-04-01')
+        New-ArmOperationPreset -Name 'ArmDeploymentValidateByResourceGroup' -Category 'ARM.Deployments' -Description 'Validate a deployment payload at resource-group scope.' -Method 'POST' -RelativePathTemplate '/subscriptions/{subscriptionId}/resourceGroups/{resourceGroupName}/providers/Microsoft.Resources/deployments/{deploymentName}/validate' -DefaultApiVersion '2021-04-01' -Aliases @('validate-deployment') -ProviderNamespace 'Microsoft.Resources' -ResourceType 'deployments' -RequiredParameters @('subscriptionId','resourceGroupName','deploymentName') -ExampleParameters @{ subscriptionId='<subscription-id>'; resourceGroupName='rg-example'; deploymentName='main' } -KnownApiVersions @('2021-04-01') -Notes @('Supply a standard ARM deployment request body by using -Body or -BodyFile.')
+        New-ArmOperationPreset -Name 'ArmDeploymentWhatIfByResourceGroup' -Category 'ARM.Deployments' -Description 'Run a what-if deployment preview at resource-group scope.' -Method 'POST' -RelativePathTemplate '/subscriptions/{subscriptionId}/resourceGroups/{resourceGroupName}/providers/Microsoft.Resources/deployments/{deploymentName}/whatIf' -DefaultApiVersion '2021-04-01' -Aliases @('whatif-deployment') -ProviderNamespace 'Microsoft.Resources' -ResourceType 'deployments' -RequiredParameters @('subscriptionId','resourceGroupName','deploymentName') -ExampleParameters @{ subscriptionId='<subscription-id>'; resourceGroupName='rg-example'; deploymentName='main' } -KnownApiVersions @('2021-04-01') -Notes @('Supply a standard ARM deployment request body by using -Body or -BodyFile.')
+        New-ArmOperationPreset -Name 'ArmDeploymentCreateOrUpdateByResourceGroup' -Category 'ARM.Deployments' -Description 'Create or update a deployment at resource-group scope.' -Method 'PUT' -RelativePathTemplate '/subscriptions/{subscriptionId}/resourceGroups/{resourceGroupName}/providers/Microsoft.Resources/deployments/{deploymentName}' -DefaultApiVersion '2021-04-01' -Aliases @('set-deployment','new-deployment') -ProviderNamespace 'Microsoft.Resources' -ResourceType 'deployments' -RequiredParameters @('subscriptionId','resourceGroupName','deploymentName') -ExampleParameters @{ subscriptionId='<subscription-id>'; resourceGroupName='rg-example'; deploymentName='main' } -KnownApiVersions @('2021-04-01') -Notes @('Supply a standard ARM deployment request body by using -Body or -BodyFile.')
+        New-ArmOperationPreset -Name 'ArmPolicyAssignmentsListAtSubscription' -Category 'ARM.Governance' -Description 'List policy assignments at subscription scope.' -Method 'GET' -RelativePathTemplate '/subscriptions/{subscriptionId}/providers/Microsoft.Authorization/policyAssignments' -DefaultApiVersion '2024-04-01' -Aliases @('subscription-policy-assignments') -ProviderNamespace 'Microsoft.Authorization' -ResourceType 'policyAssignments' -RequiredParameters @('subscriptionId') -ExampleParameters @{ subscriptionId='<subscription-id>' } -KnownApiVersions @('2024-04-01','2022-06-01')
+        New-ArmOperationPreset -Name 'ArmPolicyAssignmentsListAtResourceGroup' -Category 'ARM.Governance' -Description 'List policy assignments at resource-group scope.' -Method 'GET' -RelativePathTemplate '/subscriptions/{subscriptionId}/resourceGroups/{resourceGroupName}/providers/Microsoft.Authorization/policyAssignments' -DefaultApiVersion '2024-04-01' -Aliases @('resource-group-policy-assignments') -ProviderNamespace 'Microsoft.Authorization' -ResourceType 'policyAssignments' -RequiredParameters @('subscriptionId','resourceGroupName') -ExampleParameters @{ subscriptionId='<subscription-id>'; resourceGroupName='rg-example' } -KnownApiVersions @('2024-04-01','2022-06-01')
+        New-ArmOperationPreset -Name 'ArmLocksListAtSubscription' -Category 'ARM.Governance' -Description 'List management locks at subscription scope.' -Method 'GET' -RelativePathTemplate '/subscriptions/{subscriptionId}/providers/Microsoft.Authorization/locks' -DefaultApiVersion '2020-05-01' -Aliases @('subscription-locks') -ProviderNamespace 'Microsoft.Authorization' -ResourceType 'locks' -RequiredParameters @('subscriptionId') -ExampleParameters @{ subscriptionId='<subscription-id>' } -KnownApiVersions @('2020-05-01')
+        New-ArmOperationPreset -Name 'ArmLocksListAtResourceGroup' -Category 'ARM.Governance' -Description 'List management locks at resource-group scope.' -Method 'GET' -RelativePathTemplate '/subscriptions/{subscriptionId}/resourceGroups/{resourceGroupName}/providers/Microsoft.Authorization/locks' -DefaultApiVersion '2020-05-01' -Aliases @('resource-group-locks') -ProviderNamespace 'Microsoft.Authorization' -ResourceType 'locks' -RequiredParameters @('subscriptionId','resourceGroupName') -ExampleParameters @{ subscriptionId='<subscription-id>'; resourceGroupName='rg-example' } -KnownApiVersions @('2020-05-01')
+        New-ArmOperationPreset -Name 'AcsEmailServiceList' -Category 'ACS.Email' -Description 'List Email Communication Services in a resource group.' -Method 'GET' -RelativePathTemplate '/subscriptions/{subscriptionId}/resourceGroups/{resourceGroupName}/providers/Microsoft.Communication/emailServices' -DefaultApiVersion '2023-03-31' -Aliases @('acs-email-services','list-email-services') -ProviderNamespace 'Microsoft.Communication' -ResourceType 'emailServices' -RequiredParameters @('subscriptionId','resourceGroupName') -ExampleParameters @{ subscriptionId='<subscription-id>'; resourceGroupName='rg-example' } -KnownApiVersions @('2026-03-18','2025-09-01','2025-05-01','2025-05-01-preview','2024-09-01-preview','2023-06-01-preview','2023-04-01','2023-04-01-preview','2023-03-31','2023-03-01-preview','2022-07-01-preview','2021-10-01-preview')
+        New-ArmOperationPreset -Name 'AcsEmailServiceGet' -Category 'ACS.Email' -Description 'Get a specific Email Communication Service.' -Method 'GET' -RelativePathTemplate '/subscriptions/{subscriptionId}/resourceGroups/{resourceGroupName}/providers/Microsoft.Communication/emailServices/{emailServiceName}' -DefaultApiVersion '2023-03-31' -Aliases @('acs-email-service','get-email-service') -ProviderNamespace 'Microsoft.Communication' -ResourceType 'emailServices' -RequiredParameters @('subscriptionId','resourceGroupName','emailServiceName') -ExampleParameters @{ subscriptionId='<subscription-id>'; resourceGroupName='rg-example'; emailServiceName='mailsvc1' } -KnownApiVersions @('2026-03-18','2025-09-01','2025-05-01','2025-05-01-preview','2024-09-01-preview','2023-06-01-preview','2023-04-01','2023-04-01-preview','2023-03-31','2023-03-01-preview','2022-07-01-preview','2021-10-01-preview')
+        New-ArmOperationPreset -Name 'AcsEmailServiceCreateOrUpdate' -Category 'ACS.Email' -Description 'Create or update an Email Communication Service resource.' -Method 'PUT' -RelativePathTemplate '/subscriptions/{subscriptionId}/resourceGroups/{resourceGroupName}/providers/Microsoft.Communication/emailServices/{emailServiceName}' -DefaultApiVersion '2023-03-31' -Aliases @('new-email-service','set-email-service') -ProviderNamespace 'Microsoft.Communication' -ResourceType 'emailServices' -RequiredParameters @('subscriptionId','resourceGroupName','emailServiceName') -ExampleParameters @{ subscriptionId='<subscription-id>'; resourceGroupName='rg-example'; emailServiceName='mailsvc1' } -ExampleBody @{ location='global'; properties=@{ dataLocation='United States' } } -KnownApiVersions @('2026-03-18','2025-09-01','2025-05-01','2025-05-01-preview','2024-09-01-preview','2023-06-01-preview','2023-04-01','2023-04-01-preview','2023-03-31','2023-03-01-preview','2022-07-01-preview','2021-10-01-preview')
+        New-ArmOperationPreset -Name 'AcsEmailServiceDelete' -Category 'ACS.Email' -Description 'Delete an Email Communication Service resource.' -Method 'DELETE' -RelativePathTemplate '/subscriptions/{subscriptionId}/resourceGroups/{resourceGroupName}/providers/Microsoft.Communication/emailServices/{emailServiceName}' -DefaultApiVersion '2023-03-31' -Aliases @('remove-email-service','delete-email-service') -ProviderNamespace 'Microsoft.Communication' -ResourceType 'emailServices' -RequiredParameters @('subscriptionId','resourceGroupName','emailServiceName') -ExampleParameters @{ subscriptionId='<subscription-id>'; resourceGroupName='rg-example'; emailServiceName='mailsvc1' } -KnownApiVersions @('2026-03-18','2025-09-01','2025-05-01','2025-05-01-preview','2024-09-01-preview','2023-06-01-preview','2023-04-01','2023-04-01-preview','2023-03-31','2023-03-01-preview','2022-07-01-preview','2021-10-01-preview')
+        New-ArmOperationPreset -Name 'AcsEmailDomainList' -Category 'ACS.Email' -Description 'List email domains for an Email Communication Service.' -Method 'GET' -RelativePathTemplate '/subscriptions/{subscriptionId}/resourceGroups/{resourceGroupName}/providers/Microsoft.Communication/emailServices/{emailServiceName}/domains' -DefaultApiVersion '2023-03-31' -Aliases @('acs-email-domains','list-email-domains') -ProviderNamespace 'Microsoft.Communication' -ResourceType 'emailServices/domains' -RequiredParameters @('subscriptionId','resourceGroupName','emailServiceName') -ExampleParameters @{ subscriptionId='<subscription-id>'; resourceGroupName='rg-example'; emailServiceName='mailsvc1' } -KnownApiVersions @('2026-03-18','2025-09-01','2025-05-01','2025-05-01-preview','2024-09-01-preview','2023-06-01-preview','2023-04-01','2023-04-01-preview','2023-03-31','2023-03-01-preview','2022-07-01-preview','2021-10-01-preview')
+        New-ArmOperationPreset -Name 'AcsEmailDomainGet' -Category 'ACS.Email' -Description 'Get a specific email domain resource.' -Method 'GET' -RelativePathTemplate '/subscriptions/{subscriptionId}/resourceGroups/{resourceGroupName}/providers/Microsoft.Communication/emailServices/{emailServiceName}/domains/{domainName}' -DefaultApiVersion '2023-03-31' -Aliases @('acs-email-domain','get-email-domain') -ProviderNamespace 'Microsoft.Communication' -ResourceType 'emailServices/domains' -RequiredParameters @('subscriptionId','resourceGroupName','emailServiceName','domainName') -ExampleParameters @{ subscriptionId='<subscription-id>'; resourceGroupName='rg-example'; emailServiceName='mailsvc1'; domainName='contoso.com' } -KnownApiVersions @('2026-03-18','2025-09-01','2025-05-01','2025-05-01-preview','2024-09-01-preview','2023-06-01-preview','2023-04-01','2023-04-01-preview','2023-03-31','2023-03-01-preview','2022-07-01-preview','2021-10-01-preview')
+        New-ArmOperationPreset -Name 'AcsEmailDomainCreateOrUpdate' -Category 'ACS.Email' -Description 'Create or update an ACS email domain.' -Method 'PUT' -RelativePathTemplate '/subscriptions/{subscriptionId}/resourceGroups/{resourceGroupName}/providers/Microsoft.Communication/emailServices/{emailServiceName}/domains/{domainName}' -DefaultApiVersion '2023-03-31' -Aliases @('new-email-domain','set-email-domain') -ProviderNamespace 'Microsoft.Communication' -ResourceType 'emailServices/domains' -RequiredParameters @('subscriptionId','resourceGroupName','emailServiceName','domainName') -ExampleParameters @{ subscriptionId='<subscription-id>'; resourceGroupName='rg-example'; emailServiceName='mailsvc1'; domainName='contoso.com' } -ExampleBody @{ location='global'; properties=@{ domainManagement='CustomerManaged'; userEngagementTracking='Disabled' } } -KnownApiVersions @('2026-03-18','2025-09-01','2025-05-01','2025-05-01-preview','2024-09-01-preview','2023-06-01-preview','2023-04-01','2023-04-01-preview','2023-03-31','2023-03-01-preview','2022-07-01-preview','2021-10-01-preview')
+        New-ArmOperationPreset -Name 'AcsEmailDomainUpdate' -Category 'ACS.Email' -Description 'Patch an ACS email domain.' -Method 'PATCH' -RelativePathTemplate '/subscriptions/{subscriptionId}/resourceGroups/{resourceGroupName}/providers/Microsoft.Communication/emailServices/{emailServiceName}/domains/{domainName}' -DefaultApiVersion '2023-03-31' -Aliases @('update-email-domain','patch-email-domain') -ProviderNamespace 'Microsoft.Communication' -ResourceType 'emailServices/domains' -RequiredParameters @('subscriptionId','resourceGroupName','emailServiceName','domainName') -ExampleParameters @{ subscriptionId='<subscription-id>'; resourceGroupName='rg-example'; emailServiceName='mailsvc1'; domainName='contoso.com' } -ExampleBody @{ properties=@{ userEngagementTracking='Enabled' } } -KnownApiVersions @('2026-03-18','2025-09-01','2025-05-01','2025-05-01-preview','2024-09-01-preview','2023-06-01-preview','2023-04-01','2023-04-01-preview','2023-03-31','2023-03-01-preview','2022-07-01-preview','2021-10-01-preview')
+        New-ArmOperationPreset -Name 'AcsEmailDomainDelete' -Category 'ACS.Email' -Description 'Delete an ACS email domain.' -Method 'DELETE' -RelativePathTemplate '/subscriptions/{subscriptionId}/resourceGroups/{resourceGroupName}/providers/Microsoft.Communication/emailServices/{emailServiceName}/domains/{domainName}' -DefaultApiVersion '2023-03-31' -Aliases @('remove-email-domain','delete-email-domain') -ProviderNamespace 'Microsoft.Communication' -ResourceType 'emailServices/domains' -RequiredParameters @('subscriptionId','resourceGroupName','emailServiceName','domainName') -ExampleParameters @{ subscriptionId='<subscription-id>'; resourceGroupName='rg-example'; emailServiceName='mailsvc1'; domainName='contoso.com' } -KnownApiVersions @('2026-03-18','2025-09-01','2025-05-01','2025-05-01-preview','2024-09-01-preview','2023-06-01-preview','2023-04-01','2023-04-01-preview','2023-03-31','2023-03-01-preview','2022-07-01-preview','2021-10-01-preview')
+        New-ArmOperationPreset -Name 'AcsEmailDomainInitiateVerification' -Category 'ACS.Email' -Description 'Initiate Domain, SPF, DKIM, DKIM2, or DMARC verification for an ACS email domain.' -Method 'POST' -RelativePathTemplate '/subscriptions/{subscriptionId}/resourceGroups/{resourceGroupName}/providers/Microsoft.Communication/emailServices/{emailServiceName}/domains/{domainName}/initiateVerification' -DefaultApiVersion '2023-03-31' -Aliases @('acs-domain-initiate-verification','verify-email-domain','dkim-verify') -ProviderNamespace 'Microsoft.Communication' -ResourceType 'emailServices/domains' -RequiredParameters @('subscriptionId','resourceGroupName','emailServiceName','domainName','verificationType') -OptionalParameters @('subscriptionId') -DefaultBodyTemplate @{ verificationType='{verificationType}' } -ExampleParameters @{ subscriptionId='<subscription-id>'; resourceGroupName='rg-example'; emailServiceName='mailsvc1'; domainName='contoso.com'; verificationType='DKIM2' } -ExampleBody @{ verificationType='DKIM2' } -KnownApiVersions @('2026-03-18','2025-09-01','2025-05-01','2025-05-01-preview','2024-09-01-preview','2023-06-01-preview','2023-04-01','2023-04-01-preview','2023-03-31','2023-03-01-preview','2022-07-01-preview','2021-10-01-preview') -Notes @('Accepted verification types include Domain, SPF, DKIM, DKIM2, and DMARC.','If -Body is not provided, the preset auto-builds {"verificationType":"<value>"} from -OperationParameters.')
+        New-ArmOperationPreset -Name 'AcsEmailDomainCancelVerification' -Category 'ACS.Email' -Description 'Cancel Domain, SPF, DKIM, DKIM2, or DMARC verification for an ACS email domain.' -Method 'POST' -RelativePathTemplate '/subscriptions/{subscriptionId}/resourceGroups/{resourceGroupName}/providers/Microsoft.Communication/emailServices/{emailServiceName}/domains/{domainName}/cancelVerification' -DefaultApiVersion '2023-03-31' -Aliases @('acs-domain-cancel-verification','stop-email-domain-verification') -ProviderNamespace 'Microsoft.Communication' -ResourceType 'emailServices/domains' -RequiredParameters @('subscriptionId','resourceGroupName','emailServiceName','domainName','verificationType') -DefaultBodyTemplate @{ verificationType='{verificationType}' } -ExampleParameters @{ subscriptionId='<subscription-id>'; resourceGroupName='rg-example'; emailServiceName='mailsvc1'; domainName='contoso.com'; verificationType='DKIM2' } -ExampleBody @{ verificationType='DKIM2' } -KnownApiVersions @('2026-03-18','2025-09-01','2025-05-01','2025-05-01-preview','2024-09-01-preview','2023-06-01-preview','2023-04-01','2023-04-01-preview','2023-03-31','2023-03-01-preview','2022-07-01-preview','2021-10-01-preview') -Notes @('Accepted verification types include Domain, SPF, DKIM, DKIM2, and DMARC.','If -Body is not provided, the preset auto-builds {"verificationType":"<value>"} from -OperationParameters.')
+    )
+}
+
+function Get-ArmOperationPreset {
+    [CmdletBinding()] param([Parameter(Mandatory=$true)][string]$Name)
+    $match = Get-ArmOperationPresetCatalog | Where-Object { $_.Name -eq $Name -or $_.Aliases -contains $Name } | Select-Object -First 1
+    if ($null -eq $match) { throw "Operation '$Name' was not found. Use -ListOperations to view the available preset names and aliases." }
+    $match
+}
+
+function ConvertTo-OperationParameterLookup {
+    [CmdletBinding()] param([AllowNull()][Collections.IDictionary]$InputParameters)
+    $lookup = @{}
+    if ($null -ne $InputParameters) { foreach ($key in $InputParameters.Keys) { $lookup[[string]$key] = $InputParameters[$key] } }
+    if (-not $lookup.ContainsKey('subscriptionId')) {
+        if ($SubscriptionId) { $lookup['subscriptionId'] = $SubscriptionId }
+        else {
+            $context = Get-CurrentAzContextSafe
+            if ($context -and $context.SubscriptionId) { $lookup['subscriptionId'] = $context.SubscriptionId }
+        }
+    }
+    $lookup
+}
+
+function Get-OperationParameterValueRequired {
+    [CmdletBinding()] param([Parameter(Mandatory=$true)][hashtable]$Parameters,[Parameter(Mandatory=$true)][string]$Name)
+    $value = Get-HashtableValueIgnoreCase -Table $Parameters -Key $Name
+    if ($null -eq $value -or [string]::IsNullOrWhiteSpace([string]$value)) { throw "Operation parameter '$Name' is required. Supply it through -OperationParameters @{ $Name = 'value' }." }
+    [string]$value
+}
+
+function Resolve-OperationPathTemplate {
+    [CmdletBinding()] param([Parameter(Mandatory=$true)][string]$Template,[Parameter(Mandatory=$true)][hashtable]$Parameters)
+    $resolved = [regex]::Replace($Template,'\{([A-Za-z0-9]+)\}',{ param($m) [Uri]::EscapeDataString((Get-OperationParameterValueRequired -Parameters $Parameters -Name $m.Groups[1].Value)) })
+    if ($resolved.StartsWith('/')) { return $resolved }
+    '/' + $resolved
+}
+
+function Resolve-OperationObjectTemplate {
+    [CmdletBinding()] param([AllowNull()][object]$Template,[Parameter(Mandatory=$true)][hashtable]$Parameters)
+    if ($null -eq $Template) { return $null }
+    if ($Template -is [string]) {
+        if ($Template -match '^\{([A-Za-z0-9]+)\}$') { return (Get-OperationParameterValueRequired -Parameters $Parameters -Name $Matches[1]) }
+        return ([regex]::Replace($Template,'\{([A-Za-z0-9]+)\}',{ param($m) (Get-OperationParameterValueRequired -Parameters $Parameters -Name $m.Groups[1].Value) }))
+    }
+    if ($Template -is [Collections.IDictionary]) {
+        $result = [ordered]@{}
+        foreach ($key in $Template.Keys) { $result[[string]$key] = Resolve-OperationObjectTemplate -Template $Template[$key] -Parameters $Parameters }
+        return $result
+    }
+    if ($Template -is [Collections.IEnumerable] -and $Template -isnot [string]) {
+        $items = [Collections.Generic.List[object]]::new()
+        foreach ($item in $Template) { $items.Add((Resolve-OperationObjectTemplate -Template $item -Parameters $Parameters)) }
+        return $items.ToArray()
+    }
+    $Template
+}
+
+function ConvertTo-ApiVersionSortInfo {
+    [CmdletBinding()] param([Parameter(Mandatory=$true)][string]$ApiVersionValue)
+    $dateValue = [datetime]::MinValue; $suffix = ''
+    if ($ApiVersionValue -match '^(?<date>\d{4}-\d{2}-\d{2})(?<suffix>.*)$') { $dateValue = [datetime]::ParseExact($Matches['date'],'yyyy-MM-dd',$null); $suffix = $Matches['suffix'] }
+    [pscustomobject]@{ ApiVersion=$ApiVersionValue; Date=$dateValue; IsPreview=($ApiVersionValue -like '*preview*'); Suffix=$suffix }
+}
+
+function Sort-ApiVersionList {
+    [CmdletBinding()] param([string[]]$ApiVersionsToSort)
+    @($ApiVersionsToSort | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Sort-Object -Unique | ForEach-Object { ConvertTo-ApiVersionSortInfo -ApiVersionValue $_ } | Sort-Object @{ Expression='Date'; Descending=$true }, @{ Expression='IsPreview'; Descending=$false }, @{ Expression='ApiVersion'; Descending=$true } | ForEach-Object { $_.ApiVersion })
+}
+
+function Get-LatestStableApiVersion { [CmdletBinding()] param([string[]]$ApiVersionsToInspect) $stable = @($ApiVersionsToInspect | Where-Object { $_ -notlike '*preview*' }); if($stable.Count -gt 0){ return $stable[0] }; if($ApiVersionsToInspect.Count -gt 0){ return $ApiVersionsToInspect[0] }; $null }
+
+function Get-ProviderMetadataSafe {
+    [CmdletBinding()] param([Parameter(Mandatory=$true)][string]$ProviderNamespace)
+    $cacheKey = $ProviderNamespace.ToLowerInvariant()
+    if ($script:SessionState.ProviderMetadataCache.ContainsKey($cacheKey)) { return $script:SessionState.ProviderMetadataCache[$cacheKey] }
+    $path = '/providers/{0}?api-version={1}' -f $ProviderNamespace,$script:Configuration.ProviderMetadataApiVersion
+    $response = Invoke-AzRestMethod -Method 'GET' -Path $path -ErrorAction Stop
+    if ([string]::IsNullOrWhiteSpace($response.Content)) { throw "Provider metadata for '$ProviderNamespace' was empty." }
+    $metadata = $response.Content | ConvertFrom-Json -ErrorAction Stop
+    $script:SessionState.ProviderMetadataCache[$cacheKey] = $metadata
+    $metadata
+}
+
+function Find-ProviderResourceTypeMetadata {
+    [CmdletBinding()] param([Parameter(Mandatory=$true)][object]$ProviderMetadata,[Parameter(Mandatory=$true)][string]$ResourceType)
+    @($ProviderMetadata.resourceTypes | Where-Object { [string]::Equals([string]$_.resourceType,$ResourceType,[StringComparison]::OrdinalIgnoreCase) } | Select-Object -First 1)
+}
+
+function Get-ArmOperationApiVersionInfo {
+    [CmdletBinding()] param([Parameter(Mandatory=$true)][pscustomobject]$Preset)
+    $apiVersions = @(); $source = 'Preset'; $discoveryError = $null
+    if ($Preset.ProviderNamespace -and $Preset.ResourceType) {
+        try {
+            $providerMetadata = Get-ProviderMetadataSafe -ProviderNamespace $Preset.ProviderNamespace
+            $resourceTypeMetadata = Find-ProviderResourceTypeMetadata -ProviderMetadata $providerMetadata -ResourceType $Preset.ResourceType
+            if ($resourceTypeMetadata -and $resourceTypeMetadata.apiVersions) { $apiVersions = @($resourceTypeMetadata.apiVersions); $source = 'ProviderMetadata' }
+        }
+        catch { $discoveryError = $_.Exception.Message }
+    }
+    if ($apiVersions.Count -lt 1) { $apiVersions = @($Preset.KnownApiVersions); if($apiVersions.Count -lt 1 -and $Preset.DefaultApiVersion){ $apiVersions = @($Preset.DefaultApiVersion) } }
+    $sorted = Sort-ApiVersionList -ApiVersionsToSort $apiVersions
+    [pscustomobject]@{ Name=$Preset.Name; Category=$Preset.Category; ProviderNamespace=$Preset.ProviderNamespace; ResourceType=$Preset.ResourceType; DefaultApiVersion=$Preset.DefaultApiVersion; LatestStableApiVersion=(Get-LatestStableApiVersion -ApiVersionsToInspect $sorted); ApiVersions=$sorted; Source=$source; DiscoveryError=$discoveryError }
+}
+
+function Resolve-ArmOperationRequest {
+    [CmdletBinding()] param([Parameter(Mandatory=$true)][string]$Name,[AllowNull()][Collections.IDictionary]$Parameters)
+    $preset = Get-ArmOperationPreset -Name $Name
+    $lookup = ConvertTo-OperationParameterLookup -InputParameters $Parameters
+    foreach ($requiredParameter in @($preset.RequiredParameters)) { $null = Get-OperationParameterValueRequired -Parameters $lookup -Name $requiredParameter }
+    $effectiveBody = $null
+    $scriptBoundParameters = @($script:SessionState.BoundParameterNames)
+    if (-not ($scriptBoundParameters -contains 'Body') -and -not ($scriptBoundParameters -contains 'BodyFile') -and $null -ne $preset.DefaultBodyTemplate) { $effectiveBody = Resolve-OperationObjectTemplate -Template $preset.DefaultBodyTemplate -Parameters $lookup | ConvertTo-Json -Depth $script:Configuration.DefaultJsonDepth -Compress }
+    [pscustomobject]@{ Preset=$preset; Method=if($scriptBoundParameters -contains 'Method'){$Method}else{$preset.Method}; RelativePath=(Resolve-OperationPathTemplate -Template $preset.RelativePathTemplate -Parameters $lookup); ApiVersion=if($scriptBoundParameters -contains 'ApiVersion'){$ApiVersion}else{$preset.DefaultApiVersion}; Body=$effectiveBody; Parameters=$lookup }
+}
+
+function Show-ArmOperationPresetCatalog {
+    [CmdletBinding()] param()
+    $catalog = Get-ArmOperationPresetCatalog | Sort-Object Category,Name | ForEach-Object { [pscustomobject]@{ Name=$_.Name; Aliases=$_.Aliases; Category=$_.Category; Method=$_.Method; DefaultApiVersion=$_.DefaultApiVersion; Description=$_.Description } }
+    Write-Output ($catalog | ConvertTo-Json -Depth 10)
+}
+
+function Show-ArmOperationPresetDetails {
+    [CmdletBinding()] param([Parameter(Mandatory=$true)][string]$Name,[switch]$IncludeApiVersions)
+    $preset = Get-ArmOperationPreset -Name $Name
+    $detail = [ordered]@{ Name=$preset.Name; Aliases=$preset.Aliases; Category=$preset.Category; Description=$preset.Description; Method=$preset.Method; RelativePathTemplate=$preset.RelativePathTemplate; DefaultApiVersion=$preset.DefaultApiVersion; ProviderNamespace=$preset.ProviderNamespace; ResourceType=$preset.ResourceType; RequiredParameters=$preset.RequiredParameters; OptionalParameters=$preset.OptionalParameters; ExampleParameters=$preset.ExampleParameters; ExampleBody=$preset.ExampleBody; Notes=$preset.Notes }
+    if ($IncludeApiVersions) { $detail['ApiVersionInfo'] = Get-ArmOperationApiVersionInfo -Preset $preset }
+    Write-Output ($detail | ConvertTo-Json -Depth 20)
+}
+
+function Show-ArmOperationApiVersions {
+    [CmdletBinding()] param([Parameter(Mandatory=$true)][string]$Name)
+    $preset = Get-ArmOperationPreset -Name $Name
+    Write-Output ((Get-ArmOperationApiVersionInfo -Preset $preset) | ConvertTo-Json -Depth 10)
 }
 
 # ARM request helpers. These functions normalize URIs, validate headers/body
@@ -622,7 +855,7 @@ function ConvertTo-QueryStringSafe { [CmdletBinding()] param([Parameter(Mandator
 
 function Resolve-ArmUri {
     [CmdletBinding()] param([System.Uri]$RequestUri,[string]$RequestRelativePath,[string]$RequestApiVersion)
-    if (-not $RequestUri -and [string]::IsNullOrWhiteSpace($RequestRelativePath)) { throw 'Either -Uri or -RelativePath must be supplied for an ARM request. Use -RelativePath for ARM paths such as /subscriptions/<id>/resourceGroups/<name>.' }
+    if (-not $RequestUri -and [string]::IsNullOrWhiteSpace($RequestRelativePath)) { throw 'Either -Uri, -RelativePath, or -Operation must be supplied for an ARM request. Use -RelativePath for ARM paths such as /subscriptions/<id>/resourceGroups/<name>.' }
     $context = Get-CurrentAzContextSafe; if ($null -eq $context) { throw 'A valid Azure context is required before resolving an ARM URI.' }
     $environmentObject = Get-AzEnvironmentSafe -Name $context.Environment
     if ($null -eq $environmentObject -or [string]::IsNullOrWhiteSpace($environmentObject.ResourceManagerUrl)) { throw "Unable to determine the Resource Manager endpoint for environment '$($context.Environment)'." }
@@ -777,8 +1010,14 @@ function Initialize-Environment {
 
 function Invoke-ArmRequest {
     [CmdletBinding()] param()
+    $operationRequest = $null
+    if ($Operation) { $operationRequest = Resolve-ArmOperationRequest -Name $Operation -Parameters $OperationParameters }
+    $requestMethod = if($operationRequest){$operationRequest.Method}else{$Method}
+    $requestUri = if($operationRequest){$null}else{$Uri}
+    $requestRelativePath = if($operationRequest){$operationRequest.RelativePath}else{$RelativePath}
+    $requestApiVersion = if($operationRequest){$operationRequest.ApiVersion}else{$ApiVersion}
     $validatedHeaders = Get-ValidatedHeaders -InputHeaders $Headers
-    $requestInfo = Resolve-ArmUri -RequestUri $Uri -RequestRelativePath $RelativePath -RequestApiVersion $ApiVersion
+    $requestInfo = Resolve-ArmUri -RequestUri $requestUri -RequestRelativePath $requestRelativePath -RequestApiVersion $requestApiVersion
     $payload = $null
     if ($Body -and $BodyFile) { throw 'Body and BodyFile cannot be used together. Supply inline JSON with -Body or provide a file path with -BodyFile.' }
     if ($BodyFile) {
@@ -786,11 +1025,12 @@ function Invoke-ArmRequest {
         if (-not (Test-Path -LiteralPath $resolvedBodyFile -PathType Leaf)) { throw "Body file '$resolvedBodyFile' does not exist. Verify the path and try again." }
         $payload = Test-JsonContent -Content (Get-Content -LiteralPath $resolvedBodyFile -Raw) -ContentSource 'body file'
     } elseif ($Body) { $payload = Test-JsonContent -Content $Body -ContentSource 'body parameter' }
-    if (($Method -in $script:Configuration.AllowedBodyMethods) -and -not $payload) { Write-Log -Level 'WARN' -Message "HTTP method '$Method' was supplied without a JSON body." }
+    elseif ($operationRequest -and $operationRequest.Body) { $payload = Test-JsonContent -Content $operationRequest.Body -ContentSource 'operation preset body' }
+    if (($requestMethod -in $script:Configuration.AllowedBodyMethods) -and -not $payload) { Write-Log -Level 'WARN' -Message "HTTP method '$requestMethod' was supplied without a JSON body." }
     # Keep the initial request and final response separate so the same request
     # path works for both synchronous and long-running ARM operations.
-    $initial = Get-LastPipelineValueSafe -Values @(Invoke-ArmRequestCore -RequestMethod $Method -RequestInfo $requestInfo -Payload $payload -ValidatedHeaders $validatedHeaders)
-    $final = Get-LastPipelineValueSafe -Values @(Wait-ArmLongRunningOperation -InitialResponse $initial -InitialRequestInfo $requestInfo -InitialMethod $Method -ValidatedHeaders $validatedHeaders)
+    $initial = Get-LastPipelineValueSafe -Values @(Invoke-ArmRequestCore -RequestMethod $requestMethod -RequestInfo $requestInfo -Payload $payload -ValidatedHeaders $validatedHeaders)
+    $final = Get-LastPipelineValueSafe -Values @(Wait-ArmLongRunningOperation -InitialResponse $initial -InitialRequestInfo $requestInfo -InitialMethod $requestMethod -ValidatedHeaders $validatedHeaders)
     $formatted = Format-ArmResponse -Response $final
     Save-ArmResponse -FormattedContent $formatted
     if ($formatted -ne '') { Write-Output $formatted }
@@ -802,16 +1042,32 @@ try {
     # authentication work begins.
     if ($UseManagedIdentity -and $UseDeviceCode) { throw 'UseManagedIdentity and UseDeviceCode cannot be used together.' }
     if ($PreferBundledModules -and $PreferInstalledModules) { throw 'PreferBundledModules and PreferInstalledModules cannot be used together.' }
+    if ($Operation -and ($PSBoundParameters.ContainsKey('Uri') -or $PSBoundParameters.ContainsKey('RelativePath'))) { throw 'Operation cannot be combined with Uri or RelativePath. Use one request mode at a time.' }
+    if ($OperationParameters -and -not $Operation) { throw 'OperationParameters requires Operation.' }
+    if ($ApiVersions -and -not $Operation) { throw 'ApiVersions requires Operation.' }
+    if ($ShowOperationDetails -and -not $Operation) { throw 'ShowOperationDetails requires Operation.' }
     Initialize-Environment
+    $isRequest = ($PSBoundParameters.ContainsKey('Uri') -or $PSBoundParameters.ContainsKey('RelativePath') -or ($Operation -and -not $ListOperations -and -not $ShowOperationDetails -and -not $ApiVersions))
+    $requiresImportedModules = $ShowContext -or $ApiVersions -or $SelfTest -or $isRequest -or ((-not $ToolVersion) -and (-not $ListOperations) -and (-not $ShowOperationDetails) -and (-not $ShowBundledModuleVersions) -and (-not $ShowResolvedModuleVersions))
+    if ($ToolVersion) { Write-Output $script:Configuration.Version }
+    if ($ListOperations) { Show-ArmOperationPresetCatalog }
+    if ($ShowBundledModuleVersions) { Show-BundledModuleVersionSummary }
+    if ($ShowResolvedModuleVersions) { Show-ResolvedModuleVersionSummary }
+    if ($ShowOperationDetails -and -not $ApiVersions) { Show-ArmOperationPresetDetails -Name $Operation }
+    if (-not $requiresImportedModules) { $completedSuccessfully = $true; return }
     Import-BundledModules | Out-Null
     Initialize-AzProcessSecurity
     Test-AuthenticodeIfRequested -Paths @($script:ScriptPath)
-    if ($ToolVersion) { Write-Output $script:Configuration.Version; $completedSuccessfully = $true; return }
-    if ($ShowBundledModuleVersions) { Show-BundledModuleVersionSummary }
-    if ($ShowResolvedModuleVersions) { Show-ResolvedModuleVersionSummary }
-    $isRequest = ($PSBoundParameters.ContainsKey('Uri') -or $PSBoundParameters.ContainsKey('RelativePath'))
-    $requiresAuthentication = $ShowContext -or $isRequest -or ((-not $ToolVersion) -and (-not $ShowBundledModuleVersions) -and (-not $ShowResolvedModuleVersions) -and (-not $SelfTest))
-    if ($requiresAuthentication) { $context = Get-LastPipelineValueSafe -Values @(Connect-ArmClientPs); if ($ShowContext -or (-not $isRequest -and -not $SelfTest -and -not $ShowBundledModuleVersions -and -not $ShowResolvedModuleVersions)) { Write-Output ($context | ConvertTo-Json -Depth 10) } }
+    $utilityActionSelected = ($ToolVersion -or $ShowBundledModuleVersions -or $ShowResolvedModuleVersions -or $SelfTest -or $ListOperations -or $ShowOperationDetails -or $ApiVersions)
+    $requiresAuthentication = $ShowContext -or $isRequest -or $ApiVersions -or (-not $utilityActionSelected)
+    if ($requiresAuthentication) {
+        $context = Get-LastPipelineValueSafe -Values @(Connect-ArmClientPs)
+        if ($ShowContext -or ((-not $isRequest) -and (-not $SelfTest) -and (-not $ShowBundledModuleVersions) -and (-not $ShowResolvedModuleVersions) -and (-not $ListOperations) -and (-not $ShowOperationDetails) -and (-not $ApiVersions))) {
+            Write-Output ($context | ConvertTo-Json -Depth 10)
+        }
+    }
+    if ($ShowOperationDetails) { Show-ArmOperationPresetDetails -Name $Operation -IncludeApiVersions:$ApiVersions }
+    elseif ($ApiVersions) { Show-ArmOperationApiVersions -Name $Operation }
     if ($SelfTest) { Invoke-ArmClientSelfTest }
     if ($isRequest) { Invoke-ArmRequest }
     $completedSuccessfully = $true
