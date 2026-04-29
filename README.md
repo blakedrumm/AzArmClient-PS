@@ -42,6 +42,35 @@ Run a GET request:
   -ApiVersion "2021-04-01"
 ```
 
+Run a POST request (equivalent to `armclient post /subscriptions/`):
+
+```powershell
+.\ArmClient-PS.ps1 `
+  -Method POST `
+  -RelativePath "/subscriptions" `
+  -ApiVersion "2022-12-01"
+```
+
+Run a POST request with a JSON body:
+
+```powershell
+.\ArmClient-PS.ps1 `
+  -Method POST `
+  -RelativePath "/subscriptions/<subscriptionId>/resourceGroups/<resourceGroupName>/providers/<providerNamespace>/<resourceType>/<resourceName>/<action>" `
+  -ApiVersion "2021-04-01" `
+  -Body '{"key":"value"}'
+```
+
+Run a POST request with a JSON body file:
+
+```powershell
+.\ArmClient-PS.ps1 `
+  -Method POST `
+  -RelativePath "/subscriptions/<subscriptionId>/resourceGroups/<resourceGroupName>/providers/<providerNamespace>/<resourceType>/<resourceName>/<action>" `
+  -ApiVersion "2021-04-01" `
+  -BodyFile "request-body.json"
+```
+
 Save a response to disk:
 
 ```powershell
