@@ -93,6 +93,95 @@ Run the built-in package self-test:
 .\ArmClient-PS.ps1 -SelfTest
 ```
 
+## Azure Communication Services – Domain Verification
+
+ArmClient-PS ships built-in operation presets for Azure Communication Services (ACS) email domain verification.
+Accepted verification types are `Domain`, `SPF`, `DKIM`, `DKIM2`, and `DMARC`.
+
+### Initiate verification (using Operation preset)
+
+**SPF**
+
+```powershell
+.\ArmClient-PS.ps1 `
+  -Operation "AcsEmailDomainInitiateVerification" `
+  -OperationParameters @{
+      subscriptionId    = "<subscription-id>"
+      resourceGroupName = "<resourceGroupName>"
+      emailServiceName  = "<emailServiceName>"
+      domainName        = "<domainName>"
+      verificationType  = "SPF"
+  }
+```
+
+**DKIM**
+
+```powershell
+.\ArmClient-PS.ps1 `
+  -Operation "AcsEmailDomainInitiateVerification" `
+  -OperationParameters @{
+      subscriptionId    = "<subscription-id>"
+      resourceGroupName = "<resourceGroupName>"
+      emailServiceName  = "<emailServiceName>"
+      domainName        = "<domainName>"
+      verificationType  = "DKIM"
+  }
+```
+
+**DKIM2**
+
+```powershell
+.\ArmClient-PS.ps1 `
+  -Operation "AcsEmailDomainInitiateVerification" `
+  -OperationParameters @{
+      subscriptionId    = "<subscription-id>"
+      resourceGroupName = "<resourceGroupName>"
+      emailServiceName  = "<emailServiceName>"
+      domainName        = "<domainName>"
+      verificationType  = "DKIM2"
+  }
+```
+
+**DMARC**
+
+```powershell
+.\ArmClient-PS.ps1 `
+  -Operation "AcsEmailDomainInitiateVerification" `
+  -OperationParameters @{
+      subscriptionId    = "<subscription-id>"
+      resourceGroupName = "<resourceGroupName>"
+      emailServiceName  = "<emailServiceName>"
+      domainName        = "<domainName>"
+      verificationType  = "DMARC"
+  }
+```
+
+### Cancel verification (using Operation preset)
+
+```powershell
+.\ArmClient-PS.ps1 `
+  -Operation "AcsEmailDomainCancelVerification" `
+  -OperationParameters @{
+      subscriptionId    = "<subscription-id>"
+      resourceGroupName = "<resourceGroupName>"
+      emailServiceName  = "<emailServiceName>"
+      domainName        = "<domainName>"
+      verificationType  = "DKIM2"   # replace with SPF, DKIM, DKIM2, DMARC, or Domain
+  }
+```
+
+### Initiate verification using raw RelativePath (equivalent to `armclient post /subscriptions/...`)
+
+```powershell
+.\ArmClient-PS.ps1 `
+  -Method POST `
+  -RelativePath "/subscriptions/<subscription-id>/resourceGroups/<resourceGroupName>/providers/Microsoft.Communication/emailServices/<emailServiceName>/domains/<domainName>/initiateVerification" `
+  -ApiVersion "2023-03-31" `
+  -Body '{"verificationType":"DKIM2"}'
+```
+
+Replace `DKIM2` with `SPF`, `DKIM`, `DMARC`, or `Domain` as needed.
+
 ## Maintainer Build Workflow
 
 Rebuild bundled modules and manifests:
