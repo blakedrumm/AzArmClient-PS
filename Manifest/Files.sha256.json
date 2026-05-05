@@ -1,481 +1,481 @@
 {
   "schemaVersion": "1.0",
-  "generatedUtc": "2026-04-07T07:41:24.7945766Z",
+  "generatedUtc": "2026-05-05T08:20:02.3544333Z",
   "algorithm": "SHA256",
   "notes": "Files.sha256.json intentionally does not hash itself. Text-file hashes are computed after normalizing CRLF to LF for cross-platform consistency.",
   "files": [
     {
       "path": "ArmClient-PS.ps1",
       "algorithm": "SHA256",
-      "hash": "41842F72AC257621640507E3FA46EB4250E7A255E4AA110D3252DF6B52A7E8EB",
+      "hash": "4D9296DF1C9C1C675FE0DC241A5D89203E604019CBFE6674B79CD67C51667FD3",
       "required": true
     },
     {
       "path": "Build-BundledModules.ps1",
       "algorithm": "SHA256",
-      "hash": "1D6598DA4F418D9762D9BD0D0E92B052A823162E25B83D10349D0DC2B897295B",
+      "hash": "597C2278F15E787EC43EAEA4F7DD15058017472B9E05BF5849D29CF1807B83D4",
       "required": true
     },
     {
       "path": "Manifest\\Versions.json",
       "algorithm": "SHA256",
-      "hash": "568CBDAA97C85FB5A3740CD75E14BF19DE665B6750948D2EABCDE7FCA5C17FAD",
+      "hash": "0764C177CDA3FEEC2197AAF3140496F0F6D9AFA0BF35840854F962D657A6A2F9",
       "required": true
     },
     {
-      "path": "Modules\\Az.Accounts\\5.3.4\\.signature.p7s",
+      "path": "Modules\\Az.Accounts\\5.4.0\\.signature.p7s",
       "algorithm": "SHA256",
-      "hash": "82A90E178FE161A6134E5B99DC315E057FF43B31DFC0EB7A19C00CF080A4D9F0",
+      "hash": "03CB518ADDCFEF021BDC9BD5B4856791AACEF9F308AC9DEF44DFD355EA8C0540",
       "required": true
     },
     {
-      "path": "Modules\\Az.Accounts\\5.3.4\\Accounts.format.ps1xml",
+      "path": "Modules\\Az.Accounts\\5.4.0\\Accounts.format.ps1xml",
       "algorithm": "SHA256",
-      "hash": "EE4092A712715F2248B1B6FF3A21EEDBF7114E2B867B91A4FCB8FF3519A90589",
+      "hash": "122C4B17C90CC501167AF7644E0AA541FDEFA9BB4E6B5564B0E2495195AC1B85",
       "required": true
     },
     {
-      "path": "Modules\\Az.Accounts\\5.3.4\\Accounts.generated.format.ps1xml",
+      "path": "Modules\\Az.Accounts\\5.4.0\\Accounts.generated.format.ps1xml",
       "algorithm": "SHA256",
-      "hash": "B05FC92353B383D1E4B661796511089B6D164CC5E909EFF3AB805C262A9060FD",
+      "hash": "B0C183D74437C89DF21D862AFAB40FAD92863D54CEF044005FEB4161751C0F13",
       "required": true
     },
     {
-      "path": "Modules\\Az.Accounts\\5.3.4\\Accounts.types.ps1xml",
+      "path": "Modules\\Az.Accounts\\5.4.0\\Accounts.types.ps1xml",
       "algorithm": "SHA256",
-      "hash": "477316317A3A2EC010B50D76E18BC890E38CE4CA26D6568408BDD9BB00F757DC",
+      "hash": "3C50A9690472AEB77249B9CB1A9B326907BC1B945A2F959EE6DF50DA369B2D1C",
       "required": true
     },
     {
-      "path": "Modules\\Az.Accounts\\5.3.4\\Az.Accounts.psd1",
+      "path": "Modules\\Az.Accounts\\5.4.0\\Az.Accounts.psd1",
       "algorithm": "SHA256",
-      "hash": "ABB43710A40894706FABA481A6BE353DA647D4514D97EDB0B740869EB2DB27C4",
+      "hash": "A21ADE735CB0B4C0640F0690C62C5C3DB569362D70BDB2708E317A1441DA4B67",
       "required": true
     },
     {
-      "path": "Modules\\Az.Accounts\\5.3.4\\Az.Accounts.psm1",
+      "path": "Modules\\Az.Accounts\\5.4.0\\Az.Accounts.psm1",
       "algorithm": "SHA256",
-      "hash": "00A0A3B65A1AFACE8ABD387FEBB1DFBD8DFFF3163EF5740A7E96272B13295428",
+      "hash": "B7FF145B614D1E5F01D312897E95E1088BD35A66B0CCEC0F6E27C2E9A59C48FC",
       "required": true
     },
     {
-      "path": "Modules\\Az.Accounts\\5.3.4\\en-US\\about_az.help.txt",
+      "path": "Modules\\Az.Accounts\\5.4.0\\en-US\\about_az.help.txt",
       "algorithm": "SHA256",
       "hash": "C6427C7DF2133A6A7CC3582286795B7BAAB19C668EF3E2BC824575AFB12ACF8C",
       "required": true
     },
     {
-      "path": "Modules\\Az.Accounts\\5.3.4\\FuzzySharp.dll",
+      "path": "Modules\\Az.Accounts\\5.4.0\\FuzzySharp.dll",
       "algorithm": "SHA256",
-      "hash": "4F304F41621BFCF0754694D579C5BED53C14B16EB83FA36004C7F61F22416CC2",
+      "hash": "E56F2B5BF2D07C5D261DD7AC056AFDF92F49C4199875146619C5159E698342F7",
       "required": true
     },
     {
-      "path": "Modules\\Az.Accounts\\5.3.4\\Hyak.Common.dll",
+      "path": "Modules\\Az.Accounts\\5.4.0\\Hyak.Common.dll",
       "algorithm": "SHA256",
       "hash": "AA962B946A90E2D726F46E23A10A0D16D744FC79D478A732005FDD8E049BAF57",
       "required": true
     },
     {
-      "path": "Modules\\Az.Accounts\\5.3.4\\lib\\net45\\Newtonsoft.Json.dll",
+      "path": "Modules\\Az.Accounts\\5.4.0\\lib\\net45\\Newtonsoft.Json.dll",
       "algorithm": "SHA256",
-      "hash": "6A960876B7F43CFE552D2B6F1EEFF6E2A19B128793330155F5889CD99F30937B",
+      "hash": "624379088E77758ECB4DC755629DF14B56CE2B9B728A6331B9276439D5BBF4A3",
       "required": true
     },
     {
-      "path": "Modules\\Az.Accounts\\5.3.4\\lib\\net46\\System.Numerics.Vectors.dll",
+      "path": "Modules\\Az.Accounts\\5.4.0\\lib\\net46\\System.Numerics.Vectors.dll",
       "algorithm": "SHA256",
       "hash": "1D3EF8698281E7CF7371D1554AFEF5872B39F96C26DA772210A33DA041BA1183",
       "required": true
     },
     {
-      "path": "Modules\\Az.Accounts\\5.3.4\\lib\\net46\\System.Xml.ReaderWriter.dll",
+      "path": "Modules\\Az.Accounts\\5.4.0\\lib\\net46\\System.Xml.ReaderWriter.dll",
       "algorithm": "SHA256",
       "hash": "CDD78DF6E1544F04BB71CD21317FAC274C5B05802A061913777CFAFBF80E93C1",
       "required": true
     },
     {
-      "path": "Modules\\Az.Accounts\\5.3.4\\lib\\net461\\System.Reflection.DispatchProxy.dll",
+      "path": "Modules\\Az.Accounts\\5.4.0\\lib\\net461\\System.Reflection.DispatchProxy.dll",
       "algorithm": "SHA256",
       "hash": "590C17A6F7B54E5115438D50F6EC2B6F9BA9C32DDF7F45AD4A452154405DE4F4",
       "required": true
     },
     {
-      "path": "Modules\\Az.Accounts\\5.3.4\\lib\\net461\\System.Runtime.CompilerServices.Unsafe.dll",
+      "path": "Modules\\Az.Accounts\\5.4.0\\lib\\net461\\System.Runtime.CompilerServices.Unsafe.dll",
       "algorithm": "SHA256",
       "hash": "37768488E8EF45729BC7D9A2677633C6450042975BB96516E186DA6CB9CD0DCF",
       "required": true
     },
     {
-      "path": "Modules\\Az.Accounts\\5.3.4\\lib\\net461\\System.Security.Cryptography.ProtectedData.dll",
+      "path": "Modules\\Az.Accounts\\5.4.0\\lib\\net461\\System.Security.Cryptography.ProtectedData.dll",
       "algorithm": "SHA256",
       "hash": "A79AD1E9E7205BD790F40D6C1900BAF1A9C8CAA06089878D24ED3599AC3228A9",
       "required": true
     },
     {
-      "path": "Modules\\Az.Accounts\\5.3.4\\lib\\net462\\System.Diagnostics.DiagnosticSource.dll",
+      "path": "Modules\\Az.Accounts\\5.4.0\\lib\\net462\\System.Diagnostics.DiagnosticSource.dll",
       "algorithm": "SHA256",
       "hash": "1887592615FC08BBC91AD62307C8C11DFC14C45BF120D271D66BE4A0D1A149A7",
       "required": true
     },
     {
-      "path": "Modules\\Az.Accounts\\5.3.4\\lib\\net462\\System.Text.Encodings.Web.dll",
+      "path": "Modules\\Az.Accounts\\5.4.0\\lib\\net462\\System.Text.Encodings.Web.dll",
       "algorithm": "SHA256",
       "hash": "E9C4F5EED186CB129C527C4B8D67D163EA2F2396E9D8B96E30B5E7C12203CE84",
       "required": true
     },
     {
-      "path": "Modules\\Az.Accounts\\5.3.4\\lib\\net47\\System.Security.Cryptography.Cng.dll",
+      "path": "Modules\\Az.Accounts\\5.4.0\\lib\\net47\\System.Security.Cryptography.Cng.dll",
       "algorithm": "SHA256",
       "hash": "5BEB0246FC8CBC617FD7D18DD1F520DA8DBBB7EC820E5834D53352836A99BDA1",
       "required": true
     },
     {
-      "path": "Modules\\Az.Accounts\\5.3.4\\lib\\net47\\System.ValueTuple.dll",
+      "path": "Modules\\Az.Accounts\\5.4.0\\lib\\net47\\System.ValueTuple.dll",
       "algorithm": "SHA256",
       "hash": "E905D102585B22C6DF04F219AF5CBDBFA7BC165979E9788B62DF6DCC165E10F4",
       "required": true
     },
     {
-      "path": "Modules\\Az.Accounts\\5.3.4\\lib\\netstandard2.0\\Azure.Core.dll",
+      "path": "Modules\\Az.Accounts\\5.4.0\\lib\\netstandard2.0\\Azure.Core.dll",
       "algorithm": "SHA256",
       "hash": "61505FDB885A459C805CB44CE69FFEABBA65CDA9EB940098EF12D9F076858A95",
       "required": true
     },
     {
-      "path": "Modules\\Az.Accounts\\5.3.4\\lib\\netstandard2.0\\Azure.Identity.Broker.dll",
+      "path": "Modules\\Az.Accounts\\5.4.0\\lib\\netstandard2.0\\Azure.Identity.Broker.dll",
       "algorithm": "SHA256",
       "hash": "F9A0666A83ABF078590763359BD8DFF02CBCBE61278D77883600B4D5F32CCED8",
       "required": true
     },
     {
-      "path": "Modules\\Az.Accounts\\5.3.4\\lib\\netstandard2.0\\Azure.Identity.dll",
+      "path": "Modules\\Az.Accounts\\5.4.0\\lib\\netstandard2.0\\Azure.Identity.dll",
       "algorithm": "SHA256",
       "hash": "0DA8C675FCDA2754ED1D836FF0332F0F72136788536176C50B7D4BAF340DAFE8",
       "required": true
     },
     {
-      "path": "Modules\\Az.Accounts\\5.3.4\\lib\\netstandard2.0\\Microsoft.Bcl.AsyncInterfaces.dll",
+      "path": "Modules\\Az.Accounts\\5.4.0\\lib\\netstandard2.0\\Microsoft.Bcl.AsyncInterfaces.dll",
       "algorithm": "SHA256",
       "hash": "33E3C58D46C76D5535D7C24085957B7CCB7CE3815707300955A6309ECC2E81D1",
       "required": true
     },
     {
-      "path": "Modules\\Az.Accounts\\5.3.4\\lib\\netstandard2.0\\Microsoft.Identity.Client.Broker.dll",
+      "path": "Modules\\Az.Accounts\\5.4.0\\lib\\netstandard2.0\\Microsoft.Identity.Client.Broker.dll",
       "algorithm": "SHA256",
       "hash": "5DE3B7B552F617CB61C7158F200F1AEDF737CA4742CE17CFA28DE581CC05B154",
       "required": true
     },
     {
-      "path": "Modules\\Az.Accounts\\5.3.4\\lib\\netstandard2.0\\Microsoft.Identity.Client.dll",
+      "path": "Modules\\Az.Accounts\\5.4.0\\lib\\netstandard2.0\\Microsoft.Identity.Client.dll",
       "algorithm": "SHA256",
       "hash": "06B702235CCD05310FB3E5C5384A66FD67BE0B99941782CF00164A9A3C7326DA",
       "required": true
     },
     {
-      "path": "Modules\\Az.Accounts\\5.3.4\\lib\\netstandard2.0\\Microsoft.Identity.Client.Extensions.Msal.dll",
+      "path": "Modules\\Az.Accounts\\5.4.0\\lib\\netstandard2.0\\Microsoft.Identity.Client.Extensions.Msal.dll",
       "algorithm": "SHA256",
       "hash": "81F8BAFD8241F911D7F916D1C7A846D36C79FDE533F7029B035DD354973F2B6D",
       "required": true
     },
     {
-      "path": "Modules\\Az.Accounts\\5.3.4\\lib\\netstandard2.0\\Microsoft.Identity.Client.NativeInterop.dll",
+      "path": "Modules\\Az.Accounts\\5.4.0\\lib\\netstandard2.0\\Microsoft.Identity.Client.NativeInterop.dll",
       "algorithm": "SHA256",
       "hash": "23816820949D5DC9CC8DFA81D0522D431855EF95DCA87BB23FB9C454FE26CCF3",
       "required": true
     },
     {
-      "path": "Modules\\Az.Accounts\\5.3.4\\lib\\netstandard2.0\\Microsoft.IdentityModel.Abstractions.dll",
+      "path": "Modules\\Az.Accounts\\5.4.0\\lib\\netstandard2.0\\Microsoft.IdentityModel.Abstractions.dll",
       "algorithm": "SHA256",
       "hash": "1335AD7595661EACCED29A00CE9D5CC675C67D38A84FC75387C4D9A5BD91FEDE",
       "required": true
     },
     {
-      "path": "Modules\\Az.Accounts\\5.3.4\\lib\\netstandard2.0\\msalruntime_arm64.dll",
+      "path": "Modules\\Az.Accounts\\5.4.0\\lib\\netstandard2.0\\msalruntime_arm64.dll",
       "algorithm": "SHA256",
       "hash": "65594423C1C7FC0A75DE2F470F7FFE7BA00A47656C5CEBE90BA8B25DBA4632F6",
       "required": true
     },
     {
-      "path": "Modules\\Az.Accounts\\5.3.4\\lib\\netstandard2.0\\msalruntime_x86.dll",
+      "path": "Modules\\Az.Accounts\\5.4.0\\lib\\netstandard2.0\\msalruntime_x86.dll",
       "algorithm": "SHA256",
       "hash": "E5BB89FA328E2C08720CDF5C7886D4B8C131541B3554D5806E46A9FA2FD19DD5",
       "required": true
     },
     {
-      "path": "Modules\\Az.Accounts\\5.3.4\\lib\\netstandard2.0\\msalruntime.dll",
+      "path": "Modules\\Az.Accounts\\5.4.0\\lib\\netstandard2.0\\msalruntime.dll",
       "algorithm": "SHA256",
       "hash": "3E14DC68E5DBE0750BD7FA1C2B6337DF2CB519A0D916F45BACBA509F19A72F0F",
       "required": true
     },
     {
-      "path": "Modules\\Az.Accounts\\5.3.4\\lib\\netstandard2.0\\System.Buffers.dll",
+      "path": "Modules\\Az.Accounts\\5.4.0\\lib\\netstandard2.0\\System.Buffers.dll",
       "algorithm": "SHA256",
       "hash": "C65FFF603B283DC966D1A8B730C11D5E5E750E8021BD24640612F6CC3F2C6FB7",
       "required": true
     },
     {
-      "path": "Modules\\Az.Accounts\\5.3.4\\lib\\netstandard2.0\\System.ClientModel.dll",
+      "path": "Modules\\Az.Accounts\\5.4.0\\lib\\netstandard2.0\\System.ClientModel.dll",
       "algorithm": "SHA256",
       "hash": "44A8747F8E24A1F23D9A45D3F6345C48291DFB32948BCDDB625D1E07A38ACA3D",
       "required": true
     },
     {
-      "path": "Modules\\Az.Accounts\\5.3.4\\lib\\netstandard2.0\\System.Formats.Asn1.dll",
+      "path": "Modules\\Az.Accounts\\5.4.0\\lib\\netstandard2.0\\System.Formats.Asn1.dll",
       "algorithm": "SHA256",
       "hash": "5AA5BF6A74F14573B55DA9D30E30132DEF943862025244FA4D9B9ABEC0313A77",
       "required": true
     },
     {
-      "path": "Modules\\Az.Accounts\\5.3.4\\lib\\netstandard2.0\\System.Memory.Data.dll",
+      "path": "Modules\\Az.Accounts\\5.4.0\\lib\\netstandard2.0\\System.Memory.Data.dll",
       "algorithm": "SHA256",
       "hash": "438F24669A0DC1AFA79BC3F649614DC77824150CD757147599FDEC355CDFE7C6",
       "required": true
     },
     {
-      "path": "Modules\\Az.Accounts\\5.3.4\\lib\\netstandard2.0\\System.Memory.dll",
+      "path": "Modules\\Az.Accounts\\5.4.0\\lib\\netstandard2.0\\System.Memory.dll",
       "algorithm": "SHA256",
-      "hash": "11590D8BB3B12F29F4202B3EF8593229A5CD6DEBB61E76CBA9AC5493A82EE382",
+      "hash": "9052F3B6F64B7B70E54FA417E46027DE1320DE0713881FCCBCB427ECEDDA287A",
       "required": true
     },
     {
-      "path": "Modules\\Az.Accounts\\5.3.4\\lib\\netstandard2.0\\System.Net.Http.WinHttpHandler.dll",
+      "path": "Modules\\Az.Accounts\\5.4.0\\lib\\netstandard2.0\\System.Net.Http.WinHttpHandler.dll",
       "algorithm": "SHA256",
       "hash": "CD99C5D6D559F4F3FD83C2138F411CA8309AAB6B54B78C1B5245234A25B0E3C5",
       "required": true
     },
     {
-      "path": "Modules\\Az.Accounts\\5.3.4\\lib\\netstandard2.0\\System.Private.ServiceModel.dll",
+      "path": "Modules\\Az.Accounts\\5.4.0\\lib\\netstandard2.0\\System.Private.ServiceModel.dll",
       "algorithm": "SHA256",
       "hash": "8191CAEF096CA91D79587BC08BA123A805C01997BD15B573EF28A882EA007D6D",
       "required": true
     },
     {
-      "path": "Modules\\Az.Accounts\\5.3.4\\lib\\netstandard2.0\\System.Security.AccessControl.dll",
+      "path": "Modules\\Az.Accounts\\5.4.0\\lib\\netstandard2.0\\System.Security.AccessControl.dll",
       "algorithm": "SHA256",
       "hash": "6F4DB849979D87B7CE36D68174439D7BA2EF1F366B13F3CEB966F600D5EE5DBD",
       "required": true
     },
     {
-      "path": "Modules\\Az.Accounts\\5.3.4\\lib\\netstandard2.0\\System.Security.Permissions.dll",
+      "path": "Modules\\Az.Accounts\\5.4.0\\lib\\netstandard2.0\\System.Security.Permissions.dll",
       "algorithm": "SHA256",
       "hash": "C202A33B315D2E77B68BDF2090BD4FAE1EE71309B062C610A38CB4A922AA26B8",
       "required": true
     },
     {
-      "path": "Modules\\Az.Accounts\\5.3.4\\lib\\netstandard2.0\\System.Security.Principal.Windows.dll",
+      "path": "Modules\\Az.Accounts\\5.4.0\\lib\\netstandard2.0\\System.Security.Principal.Windows.dll",
       "algorithm": "SHA256",
       "hash": "8FE54076455310A7F1F3F40032F89923822CC449D0FB713CDB2C796D5C90CD49",
       "required": true
     },
     {
-      "path": "Modules\\Az.Accounts\\5.3.4\\lib\\netstandard2.0\\System.ServiceModel.Primitives.dll",
+      "path": "Modules\\Az.Accounts\\5.4.0\\lib\\netstandard2.0\\System.ServiceModel.Primitives.dll",
       "algorithm": "SHA256",
       "hash": "3DB09F5EEC5D6D4DACBB5D0FC9A7F3B53814501EDC36BD048162C3F1F7277E8C",
       "required": true
     },
     {
-      "path": "Modules\\Az.Accounts\\5.3.4\\lib\\netstandard2.0\\System.Text.Json.dll",
+      "path": "Modules\\Az.Accounts\\5.4.0\\lib\\netstandard2.0\\System.Text.Json.dll",
       "algorithm": "SHA256",
       "hash": "F80C939BE592939CA3BBBC9DDF61BB137CE201EC38D70005915CB70ACF2D4CC3",
       "required": true
     },
     {
-      "path": "Modules\\Az.Accounts\\5.3.4\\lib\\netstandard2.0\\System.Threading.Tasks.Extensions.dll",
+      "path": "Modules\\Az.Accounts\\5.4.0\\lib\\netstandard2.0\\System.Threading.Tasks.Extensions.dll",
       "algorithm": "SHA256",
       "hash": "71E03829D7EAC3051B9600A7C653763C813FBFA593A3E4A0791F7CB366332F7E",
       "required": true
     },
     {
-      "path": "Modules\\Az.Accounts\\5.3.4\\Microsoft.ApplicationInsights.dll",
+      "path": "Modules\\Az.Accounts\\5.4.0\\Microsoft.ApplicationInsights.dll",
       "algorithm": "SHA256",
       "hash": "BAD023A6BDCD51B859618800EC739DC796608554EC7C0B6D2379935A6A27AFFB",
       "required": true
     },
     {
-      "path": "Modules\\Az.Accounts\\5.3.4\\Microsoft.Azure.Common.dll",
+      "path": "Modules\\Az.Accounts\\5.4.0\\Microsoft.Azure.Common.dll",
       "algorithm": "SHA256",
       "hash": "BEEFBF11928C18332A8DFF9781CCC8735636B160D4E2CE42610D1D20FEC4F057",
       "required": true
     },
     {
-      "path": "Modules\\Az.Accounts\\5.3.4\\Microsoft.Azure.PowerShell.AssemblyLoading.dll",
+      "path": "Modules\\Az.Accounts\\5.4.0\\Microsoft.Azure.PowerShell.AssemblyLoading.dll",
       "algorithm": "SHA256",
-      "hash": "1E4D42B63A792C882CF155FB83971E538C14550CB8F4A37FC01FA11419342C83",
+      "hash": "25643D0A49B4137B306CCEC36C09A15D268EC4502A10B612A8E7DF4A85188773",
       "required": true
     },
     {
-      "path": "Modules\\Az.Accounts\\5.3.4\\Microsoft.Azure.PowerShell.Authentication.Abstractions.dll",
+      "path": "Modules\\Az.Accounts\\5.4.0\\Microsoft.Azure.PowerShell.Authentication.Abstractions.dll",
       "algorithm": "SHA256",
-      "hash": "5F19559DD1E6BAF97548EA8B9DACD7AD1D937A1D068A994B1AB86F1F1B245AB1",
+      "hash": "42B70D49814AEAD7A68F7E0CA600259FFCD53F820BFE2D5AE09CDBF6D17A831A",
       "required": true
     },
     {
-      "path": "Modules\\Az.Accounts\\5.3.4\\Microsoft.Azure.PowerShell.Authentication.dll",
+      "path": "Modules\\Az.Accounts\\5.4.0\\Microsoft.Azure.PowerShell.Authentication.dll",
       "algorithm": "SHA256",
-      "hash": "BB1CF007B39B1693712908F12BB0E065E42CD25E7AF4B0AF8293ED594F827C9A",
+      "hash": "820B2B3241EF68C7DB8B5B93DE81D7421C0C9964862B12656ACCBC89E534F03E",
       "required": true
     },
     {
-      "path": "Modules\\Az.Accounts\\5.3.4\\Microsoft.Azure.PowerShell.Authentication.ResourceManager.dll",
+      "path": "Modules\\Az.Accounts\\5.4.0\\Microsoft.Azure.PowerShell.Authentication.ResourceManager.dll",
       "algorithm": "SHA256",
-      "hash": "E12D08829EAD411189CB24A9438B77AB6DF4043AA43C75F38F142E89F7FE65F8",
+      "hash": "16C22BE05C1AD4F61DC399957411EDBE30A38BA5604247C256A4135AD07867E7",
       "required": true
     },
     {
-      "path": "Modules\\Az.Accounts\\5.3.4\\Microsoft.Azure.PowerShell.AuthenticationAssemblyLoadContext.dll",
+      "path": "Modules\\Az.Accounts\\5.4.0\\Microsoft.Azure.PowerShell.AuthenticationAssemblyLoadContext.dll",
       "algorithm": "SHA256",
-      "hash": "E8276EE8365F97CC623FCA6889B17E643E4206E199DC1B7F387CD5A6D3911692",
+      "hash": "F9790ED001C547DD1070F2335859219E64E0076764723834D0CE656F43B0C834",
       "required": true
     },
     {
-      "path": "Modules\\Az.Accounts\\5.3.4\\Microsoft.Azure.PowerShell.Authenticators.dll",
+      "path": "Modules\\Az.Accounts\\5.4.0\\Microsoft.Azure.PowerShell.Authenticators.dll",
       "algorithm": "SHA256",
-      "hash": "341D4A457091959A4140D8B15A33AED84549FA5C79B63736FB54F123365F27D9",
+      "hash": "38922A0573713BBDB18FB41A9DA1A2870653EC03D51B8B41A814490795F9A554",
       "required": true
     },
     {
-      "path": "Modules\\Az.Accounts\\5.3.4\\Microsoft.Azure.PowerShell.Clients.Aks.dll",
+      "path": "Modules\\Az.Accounts\\5.4.0\\Microsoft.Azure.PowerShell.Clients.Aks.dll",
       "algorithm": "SHA256",
-      "hash": "5F4BCBB60D6C45116144416F5186F21D5F9B62F217A48668086DFE8A8EE60156",
+      "hash": "AC6929A442D2508F2811E0543EF20B6E1E9A5D24DCA46188104C8E31576E91D2",
       "required": true
     },
     {
-      "path": "Modules\\Az.Accounts\\5.3.4\\Microsoft.Azure.PowerShell.Clients.Authorization.dll",
+      "path": "Modules\\Az.Accounts\\5.4.0\\Microsoft.Azure.PowerShell.Clients.Authorization.dll",
       "algorithm": "SHA256",
-      "hash": "6EE64EB2D009A61DB36BDC55CA4931D392B3E84F5C30F62E6CC6A3679A94BAD3",
+      "hash": "928620D37187DAB7A31FDD8A30DBAEF6B238F83EFA8B70FD49A6B252B82BD3BE",
       "required": true
     },
     {
-      "path": "Modules\\Az.Accounts\\5.3.4\\Microsoft.Azure.PowerShell.Clients.Compute.dll",
+      "path": "Modules\\Az.Accounts\\5.4.0\\Microsoft.Azure.PowerShell.Clients.Compute.dll",
       "algorithm": "SHA256",
-      "hash": "B7219A58F3BCD1400F63849BA945346A5334F6837EC65E2A72EE5BF7BA033A4D",
+      "hash": "1C5AC0433CA2554BA7E7152B48C4FD6EA4243ECCF685694C66EA9E6FB4EF3A96",
       "required": true
     },
     {
-      "path": "Modules\\Az.Accounts\\5.3.4\\Microsoft.Azure.PowerShell.Clients.Graph.Rbac.dll",
+      "path": "Modules\\Az.Accounts\\5.4.0\\Microsoft.Azure.PowerShell.Clients.Graph.Rbac.dll",
       "algorithm": "SHA256",
-      "hash": "D80C312E9507FD71EF167F9451A60F08B1353048021A5AFE658471BCFEB7089C",
+      "hash": "C806E0AB10C374CA24D10F9CBEBC208AC6F3B2D3068E2F94CCB527FC6C8E3C91",
       "required": true
     },
     {
-      "path": "Modules\\Az.Accounts\\5.3.4\\Microsoft.Azure.PowerShell.Clients.KeyVault.dll",
+      "path": "Modules\\Az.Accounts\\5.4.0\\Microsoft.Azure.PowerShell.Clients.KeyVault.dll",
       "algorithm": "SHA256",
-      "hash": "4F93DFD148682B3628F765B60E9D6A952B1E58F66A807E7643663414F98DA812",
+      "hash": "6775C685512CE2046867F08EE32D157652923A9507E85E0633FC6B0A84A62B07",
       "required": true
     },
     {
-      "path": "Modules\\Az.Accounts\\5.3.4\\Microsoft.Azure.PowerShell.Clients.Monitor.dll",
+      "path": "Modules\\Az.Accounts\\5.4.0\\Microsoft.Azure.PowerShell.Clients.Monitor.dll",
       "algorithm": "SHA256",
-      "hash": "C9D5235DEE261451F129AE75962940CC3A89425C287473BB7FC3C737C1DC10DE",
+      "hash": "71BE7C79149195FF56352EC9F4AB8BF7D5D8520F24F1DF12FD29A00C9BCBD669",
       "required": true
     },
     {
-      "path": "Modules\\Az.Accounts\\5.3.4\\Microsoft.Azure.PowerShell.Clients.Network.dll",
+      "path": "Modules\\Az.Accounts\\5.4.0\\Microsoft.Azure.PowerShell.Clients.Network.dll",
       "algorithm": "SHA256",
-      "hash": "D04E6C2386BAAF608A960DEFBC24C316AB4118A9BB3228B391C8B36055274B2A",
+      "hash": "B3FC75021E4E13593E8942A1BA25605111813BAC0698F230551B5080E1231325",
       "required": true
     },
     {
-      "path": "Modules\\Az.Accounts\\5.3.4\\Microsoft.Azure.PowerShell.Clients.PolicyInsights.dll",
+      "path": "Modules\\Az.Accounts\\5.4.0\\Microsoft.Azure.PowerShell.Clients.PolicyInsights.dll",
       "algorithm": "SHA256",
-      "hash": "995DA8A26D1F98D8F3F6609963C339E1952AFD2087B1D3DA01F21ACABF8161F0",
+      "hash": "25BA3773A19B4E6530A4265BC8E761A4775305E7C5A669C3E0C4F2D6FA82A8A3",
       "required": true
     },
     {
-      "path": "Modules\\Az.Accounts\\5.3.4\\Microsoft.Azure.PowerShell.Clients.ResourceManager.dll",
+      "path": "Modules\\Az.Accounts\\5.4.0\\Microsoft.Azure.PowerShell.Clients.ResourceManager.dll",
       "algorithm": "SHA256",
-      "hash": "F57E5168B59F37549879F7C4C656B7C086FD2449A49A2F8EC89E382D6A78D0AA",
+      "hash": "EDE45FB971358CD2BBE2C7F22E3066D02A8204AB488F530CED0393CA3FE36978",
       "required": true
     },
     {
-      "path": "Modules\\Az.Accounts\\5.3.4\\Microsoft.Azure.PowerShell.Clients.Storage.Management.dll",
+      "path": "Modules\\Az.Accounts\\5.4.0\\Microsoft.Azure.PowerShell.Clients.Storage.Management.dll",
       "algorithm": "SHA256",
-      "hash": "558D4A8C87DBC69D3437B624E384527EAF376DDB3FC3CD8B712D606BF79FC84C",
+      "hash": "C3E4222EF137557D1EF62724F33F6E7128F18623664BEBCF9F0DDD6962852E60",
       "required": true
     },
     {
-      "path": "Modules\\Az.Accounts\\5.3.4\\Microsoft.Azure.PowerShell.Clients.Websites.dll",
+      "path": "Modules\\Az.Accounts\\5.4.0\\Microsoft.Azure.PowerShell.Clients.Websites.dll",
       "algorithm": "SHA256",
-      "hash": "8BF3B2BAE9FF8DE85CFE762740590DF67AEE7BFBA7557F471BC035287077654A",
+      "hash": "2ECEF9C2B526DF31C8CD6A93669D4C986420CCCCB11EBEBE741AB0A19141FA97",
       "required": true
     },
     {
-      "path": "Modules\\Az.Accounts\\5.3.4\\Microsoft.Azure.PowerShell.Cmdlets.Accounts.dll",
+      "path": "Modules\\Az.Accounts\\5.4.0\\Microsoft.Azure.PowerShell.Cmdlets.Accounts.dll",
       "algorithm": "SHA256",
-      "hash": "65D93AEA7641985A858F49660D0EDFE10A4E6153CEF47B4FFE3A9270D7E84CDD",
+      "hash": "9CC5481D775C83C63281705BFE2F64DF04F3DFE9745105B430023CF3887C8C17",
       "required": true
     },
     {
-      "path": "Modules\\Az.Accounts\\5.3.4\\Microsoft.Azure.PowerShell.Cmdlets.Accounts.dll-Help.xml",
+      "path": "Modules\\Az.Accounts\\5.4.0\\Microsoft.Azure.PowerShell.Cmdlets.Accounts.dll-Help.xml",
       "algorithm": "SHA256",
       "hash": "750573F02DD70F05F68B67A8136279581BDD77B78F8AACC8560F972E03AF6D6D",
       "required": true
     },
     {
-      "path": "Modules\\Az.Accounts\\5.3.4\\Microsoft.Azure.PowerShell.Common.dll",
+      "path": "Modules\\Az.Accounts\\5.4.0\\Microsoft.Azure.PowerShell.Common.dll",
       "algorithm": "SHA256",
-      "hash": "58A257D33B309AD58E2D72500C564E27737A766A2BAA2E9BBAEA03BA387DF249",
+      "hash": "709D6E59D5A622C7B4253121A57A1F74206615DD24B5148126FE57F018E66081",
       "required": true
     },
     {
-      "path": "Modules\\Az.Accounts\\5.3.4\\Microsoft.Azure.PowerShell.Common.Share.dll",
+      "path": "Modules\\Az.Accounts\\5.4.0\\Microsoft.Azure.PowerShell.Common.Share.dll",
       "algorithm": "SHA256",
-      "hash": "880524704F44E1888A1D5FD83159F4ABD386F01368DB8E46049D5D2043594C4A",
+      "hash": "2E19103190AF5DB7660F586ED33BA0AF7D087EBB9B3E1E58D89874F74243BFCF",
       "required": true
     },
     {
-      "path": "Modules\\Az.Accounts\\5.3.4\\Microsoft.Azure.PowerShell.Storage.dll",
+      "path": "Modules\\Az.Accounts\\5.4.0\\Microsoft.Azure.PowerShell.Storage.dll",
       "algorithm": "SHA256",
-      "hash": "51CDF3EAAC44D3DF67DA519EEF02AEF694217873CCC27B8EE98251ED9A3B0C71",
+      "hash": "2ADFB69D16CF15123FEA41AA09F01841C329DBF175B2FE408D668F11EB790800",
       "required": true
     },
     {
-      "path": "Modules\\Az.Accounts\\5.3.4\\Microsoft.Azure.PowerShell.Strategies.dll",
+      "path": "Modules\\Az.Accounts\\5.4.0\\Microsoft.Azure.PowerShell.Strategies.dll",
       "algorithm": "SHA256",
-      "hash": "BA3673DD6C6DDA5B5A7F64FF8BAF100A14C5FB5057170CB6F5866D8DBEE586DC",
+      "hash": "E6B5C896B2703B8FD3177D9B5628CCD202A292DD09FFC44BBD0C5B8C66099F30",
       "required": true
     },
     {
-      "path": "Modules\\Az.Accounts\\5.3.4\\Microsoft.Rest.ClientRuntime.Azure.dll",
+      "path": "Modules\\Az.Accounts\\5.4.0\\Microsoft.Rest.ClientRuntime.Azure.dll",
       "algorithm": "SHA256",
       "hash": "403CDE7E626B8ACB21AC5E5B65E72BFB7DF1E409C0393B9B00D3676CAA215DF7",
       "required": true
     },
     {
-      "path": "Modules\\Az.Accounts\\5.3.4\\Microsoft.Rest.ClientRuntime.dll",
+      "path": "Modules\\Az.Accounts\\5.4.0\\Microsoft.Rest.ClientRuntime.dll",
       "algorithm": "SHA256",
       "hash": "B2EFE692CAD4CE3962D101247DC2AD3356D0C59DEC7E5659EEF80452A6825E3B",
       "required": true
     },
     {
-      "path": "Modules\\Az.Accounts\\5.3.4\\Microsoft.WindowsAzure.Storage.dll",
+      "path": "Modules\\Az.Accounts\\5.4.0\\Microsoft.WindowsAzure.Storage.dll",
       "algorithm": "SHA256",
       "hash": "3E94A41DB94794B277F0FBA85707F8CD404ED3A360718EDF2DCCD0CFADAA9584",
       "required": true
     },
     {
-      "path": "Modules\\Az.Accounts\\5.3.4\\PostImportScripts\\LoadAuthenticators.ps1",
+      "path": "Modules\\Az.Accounts\\5.4.0\\PostImportScripts\\LoadAuthenticators.ps1",
       "algorithm": "SHA256",
-      "hash": "239039CD4563C4592EF5A25A8E38DF68C0BE31A8DBE45D081CBD5AD6C9D98553",
+      "hash": "49E5BB7DE65556F095D8981B61D2A589A85E06AF526D67CF799FAC6F2CDB2DC7",
       "required": true
     },
     {
-      "path": "Modules\\Az.Accounts\\5.3.4\\StartupScripts\\AzError.ps1",
+      "path": "Modules\\Az.Accounts\\5.4.0\\StartupScripts\\AzError.ps1",
       "algorithm": "SHA256",
-      "hash": "1E8B49A20DCDD21870253D5A60A6DD3F2ADE49F9C81F3DC485BCB4BA8081A235",
+      "hash": "6E557E0CB5550819356E29C46E40445A9758709B7936B15288F2A13CB934B953",
       "required": true
     },
     {
-      "path": "Modules\\Az.Accounts\\5.3.4\\StartupScripts\\InitializeAssemblyResolver.ps1",
+      "path": "Modules\\Az.Accounts\\5.4.0\\StartupScripts\\InitializeAssemblyResolver.ps1",
       "algorithm": "SHA256",
-      "hash": "AA804617AFD65DE4312D2CB5F068B385BEB8D4BFBDEF05EB8DE65F6B3848CA7C",
+      "hash": "B0E7F5381EA2F744EAD9D8960D1088B9AEE1E99D4A652C47DDAF8218B68F0CF1",
       "required": true
     },
     {
-      "path": "Modules\\Az.Accounts\\5.3.4\\StartupScripts\\InitializePSStyle.ps1",
+      "path": "Modules\\Az.Accounts\\5.4.0\\StartupScripts\\InitializePSStyle.ps1",
       "algorithm": "SHA256",
-      "hash": "53588FA1526A4FE6F06FC63804DD5CC3242A738B819A50BAD0AF81440148A5D3",
+      "hash": "4CFEEB8351F11422B9795A8B7FFA4D6806977E7CF6CD970F102B0FC3B2A69452",
       "required": true
     }
   ]
