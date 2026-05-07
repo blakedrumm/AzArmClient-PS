@@ -913,11 +913,15 @@ function Get-ArmErrorDetails {
             $detailsProperty = $errorObject.PSObject.Properties['details']
         }
     }
+    $codeValue = if ($codeProperty) { if($codeProperty -is [Management.Automation.PSPropertyInfo]){ [string]$codeProperty.Value } else { [string]$codeProperty } } else { $null }
+    $messageValue = if ($messageProperty) { if($messageProperty -is [Management.Automation.PSPropertyInfo]){ [string]$messageProperty.Value } else { [string]$messageProperty } } else { $null }
+    $targetValue = if ($targetProperty) { if($targetProperty -is [Management.Automation.PSPropertyInfo]){ [string]$targetProperty.Value } else { [string]$targetProperty } } else { $null }
+    $detailsValue = if ($detailsProperty) { if($detailsProperty -is [Management.Automation.PSPropertyInfo]){ $detailsProperty.Value } else { $detailsProperty } } else { $null }
     [pscustomobject]@{
-        Code = if ($codeProperty) { [string](if($codeProperty -is [Management.Automation.PSPropertyInfo]){ $codeProperty.Value } else { $codeProperty }) } else { $null }
-        Message = if ($messageProperty) { [string](if($messageProperty -is [Management.Automation.PSPropertyInfo]){ $messageProperty.Value } else { $messageProperty }) } else { Redact-SensitiveText -Text $Response.Content }
-        Target = if ($targetProperty) { [string](if($targetProperty -is [Management.Automation.PSPropertyInfo]){ $targetProperty.Value } else { $targetProperty }) } else { $null }
-        Details = if ($detailsProperty) { if($detailsProperty -is [Management.Automation.PSPropertyInfo]){ $detailsProperty.Value } else { $detailsProperty } } else { $null }
+        Code = $codeValue
+        Message = if ($messageValue) { $messageValue } else { Redact-SensitiveText -Text $Response.Content }
+        Target = $targetValue
+        Details = $detailsValue
         CorrelationId = $Response.CorrelationId
         RequestId = $Response.RequestId
     }
