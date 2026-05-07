@@ -899,7 +899,10 @@ function Get-ArmErrorDetails {
     [CmdletBinding()] param([Parameter(Mandatory=$true)][pscustomobject]$Response)
     $parsed=$null; try { if(-not [string]::IsNullOrWhiteSpace($Response.Content)){ $parsed=$Response.Content | ConvertFrom-Json -ErrorAction Stop } } catch { $parsed=$null }
     $errorObject = if($parsed -and $parsed.error){ $parsed.error } else { $parsed }
-    $codeProperty = $null; $messageProperty = $null; $targetProperty = $null; $detailsProperty = $null
+    $codeProperty = $null
+    $messageProperty = $null
+    $targetProperty = $null
+    $detailsProperty = $null
     if ($errorObject) {
         if ($errorObject -is [Collections.IDictionary]) {
             if ($errorObject.Contains('code')) { $codeProperty = $errorObject['code'] }
@@ -913,10 +916,17 @@ function Get-ArmErrorDetails {
             $detailsProperty = $errorObject.PSObject.Properties['details']
         }
     }
-    $codeValue = if ($codeProperty) { if($codeProperty -is [Management.Automation.PSPropertyInfo]){ [string]$codeProperty.Value } else { [string]$codeProperty } } else { $null }
-    $messageValue = if ($messageProperty) { if($messageProperty -is [Management.Automation.PSPropertyInfo]){ [string]$messageProperty.Value } else { [string]$messageProperty } } else { $null }
-    $targetValue = if ($targetProperty) { if($targetProperty -is [Management.Automation.PSPropertyInfo]){ [string]$targetProperty.Value } else { [string]$targetProperty } } else { $null }
-    $detailsValue = if ($detailsProperty) { if($detailsProperty -is [Management.Automation.PSPropertyInfo]){ $detailsProperty.Value } else { $detailsProperty } } else { $null }
+    function Resolve-ArmErrorPropertyValue {
+        [CmdletBinding()] param([AllowNull()][object]$Property,[switch]$AsString)
+        if (-not $Property) { return $null }
+        $value = if($Property -is [Management.Automation.PSPropertyInfo]){ $Property.Value } else { $Property }
+        if ($AsString) { return [string]$value }
+        $value
+    }
+    $codeValue = Resolve-ArmErrorPropertyValue -Property $codeProperty -AsString
+    $messageValue = Resolve-ArmErrorPropertyValue -Property $messageProperty -AsString
+    $targetValue = Resolve-ArmErrorPropertyValue -Property $targetProperty -AsString
+    $detailsValue = Resolve-ArmErrorPropertyValue -Property $detailsProperty
     [pscustomobject]@{
         Code = $codeValue
         Message = if ($messageValue) { $messageValue } else { Redact-SensitiveText -Text $Response.Content }
