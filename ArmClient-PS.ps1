@@ -899,7 +899,28 @@ function Get-ArmErrorDetails {
     [CmdletBinding()] param([Parameter(Mandatory=$true)][pscustomobject]$Response)
     $parsed=$null; try { if(-not [string]::IsNullOrWhiteSpace($Response.Content)){ $parsed=$Response.Content | ConvertFrom-Json -ErrorAction Stop } } catch { $parsed=$null }
     $errorObject = if($parsed -and $parsed.error){ $parsed.error } else { $parsed }
-    [pscustomobject]@{ Code=if($errorObject -and $errorObject.code){[string]$errorObject.code}else{$null}; Message=if($errorObject -and $errorObject.message){[string]$errorObject.message}else{Redact-SensitiveText -Text $Response.Content}; Target=if($errorObject -and $errorObject.target){[string]$errorObject.target}else{$null}; Details=if($errorObject -and $errorObject.details){$errorObject.details}else{$null}; CorrelationId=$Response.CorrelationId; RequestId=$Response.RequestId }
+    $codeProperty = $null; $messageProperty = $null; $targetProperty = $null; $detailsProperty = $null
+    if ($errorObject) {
+        if ($errorObject -is [Collections.IDictionary]) {
+            if ($errorObject.Contains('code')) { $codeProperty = $errorObject['code'] }
+            if ($errorObject.Contains('message')) { $messageProperty = $errorObject['message'] }
+            if ($errorObject.Contains('target')) { $targetProperty = $errorObject['target'] }
+            if ($errorObject.Contains('details')) { $detailsProperty = $errorObject['details'] }
+        } else {
+            $codeProperty = $errorObject.PSObject.Properties['code']
+            $messageProperty = $errorObject.PSObject.Properties['message']
+            $targetProperty = $errorObject.PSObject.Properties['target']
+            $detailsProperty = $errorObject.PSObject.Properties['details']
+        }
+    }
+    [pscustomobject]@{
+        Code = if ($codeProperty) { [string](if($codeProperty -is [Management.Automation.PSPropertyInfo]){ $codeProperty.Value } else { $codeProperty }) } else { $null }
+        Message = if ($messageProperty) { [string](if($messageProperty -is [Management.Automation.PSPropertyInfo]){ $messageProperty.Value } else { $messageProperty }) } else { Redact-SensitiveText -Text $Response.Content }
+        Target = if ($targetProperty) { [string](if($targetProperty -is [Management.Automation.PSPropertyInfo]){ $targetProperty.Value } else { $targetProperty }) } else { $null }
+        Details = if ($detailsProperty) { if($detailsProperty -is [Management.Automation.PSPropertyInfo]){ $detailsProperty.Value } else { $detailsProperty } } else { $null }
+        CorrelationId = $Response.CorrelationId
+        RequestId = $Response.RequestId
+    }
 }
 
 function Invoke-ArmRequestCore {
