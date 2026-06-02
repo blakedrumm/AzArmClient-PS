@@ -10,15 +10,15 @@ versions, optionally signs tool-owned scripts, and generates Manifest\Versions.j
 Script Name: Build-BundledModules.ps1
 Description: Maintainer build script for bundled Az module packaging.
 Author: Blake Drumm (blakedrumm@microsoft.com)
-Version: 1.0.3
+Version: 1.0.4
 Created Date: 2026-04-03
-Last Updated Date: 2026-05-05
+Last Updated Date: 2026-06-02
 Requirements: Windows PowerShell 5.1 or PowerShell 7.x, internet access for maintainer builds, Save-PSResource preferred.
 Notes: Runtime downloads are intentionally disallowed in ArmClient-PS.ps1. This script is the controlled packaging path.
 #>
 [CmdletBinding()]
 param(
-    [Parameter()][ValidateNotNullOrEmpty()][string]$ToolVersion='1.0.3',
+    [Parameter()][ValidateNotNullOrEmpty()][string]$ToolVersion='1.0.4',
     [Parameter()][switch]$Clean,
     [Parameter()][string]$OutputRoot,
     [Parameter()][string]$ModulesPath,
@@ -45,7 +45,7 @@ $script:Configuration = [ordered]@{
     ToolScriptName            = 'ArmClient-PS.ps1'
     ToolName                  = 'ArmClient-PS'
     Author                    = 'Blake Drumm (blakedrumm@microsoft.com)'
-    Version                   = '1.0.3'
+    Version                   = '1.0.4'
     DefaultModulesFolderName  = 'Modules'
     DefaultManifestFolderName = 'Manifest'
     DefaultLogsFolderName     = 'Logs'
@@ -54,7 +54,7 @@ $script:Configuration = [ordered]@{
     FileHashAlgorithm         = 'SHA256'
     TextFileExtensions        = @('.ps1','.psm1','.psd1','.ps1xml','.json','.txt','.xml')
     RequiredModules           = @(
-        [pscustomobject]@{ Name='Az.Accounts'; Version='5.4.0'; Repository='PSGallery' }
+        [pscustomobject]@{ Name='Az.Accounts'; Version='5.5.0'; Repository='PSGallery' }
     )
 }
 

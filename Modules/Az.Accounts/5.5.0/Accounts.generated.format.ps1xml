@@ -1,0 +1,472 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Configuration>
+  <ViewDefinitions>
+    <View>
+      <Name>Microsoft.Azure.Commands.Profile.Models.Core.PSAzureProfile</Name>
+      <ViewSelectedBy>
+        <TypeName>Microsoft.Azure.Commands.Profile.Models.Core.PSAzureProfile</TypeName>
+      </ViewSelectedBy>
+      <TableControl>
+        <TableHeaders>
+          <TableColumnHeader>
+            <Alignment>Left</Alignment>
+            <Label>Subscription name</Label>
+          </TableColumnHeader>
+          <TableColumnHeader>
+            <Alignment>Left</Alignment>
+            <Label>Tenant</Label>
+          </TableColumnHeader>
+        </TableHeaders>
+        <TableRowEntries>
+          <TableRowEntry>
+            <TableColumnItems>
+              <TableColumnItem>
+                <Alignment>Left</Alignment>
+                <ScriptBlock>if($null -ne $_.Context.Subscription.Name){$_.Context.Subscription.Name}else{$_.Context.Subscription.Id}</ScriptBlock>
+              </TableColumnItem>
+              <TableColumnItem>
+                <Alignment>Left</Alignment>
+                <ScriptBlock>if($null -ne $_.Context.Tenant.Name){$_.Context.Tenant.Name}else{$_.Context.Tenant.Id}</ScriptBlock>
+              </TableColumnItem>
+            </TableColumnItems>
+          </TableRowEntry>
+        </TableRowEntries>
+      </TableControl>
+    </View>
+    <View>
+      <Name>Microsoft.Azure.Commands.Profile.Models.Core.PSAzureContext</Name>
+      <ViewSelectedBy>
+        <TypeName>Microsoft.Azure.Commands.Profile.Models.Core.PSAzureContext</TypeName>
+      </ViewSelectedBy>
+      <TableControl>
+        <TableHeaders>
+          <TableColumnHeader>
+            <Alignment>Left</Alignment>
+            <Label>SubscriptionName</Label>
+          </TableColumnHeader>
+          <TableColumnHeader>
+            <Alignment>Left</Alignment>
+            <Label>SubscriptionId</Label>
+          </TableColumnHeader>
+          <TableColumnHeader>
+            <Alignment>Left</Alignment>
+            <Label>Account</Label>
+          </TableColumnHeader>
+          <TableColumnHeader>
+            <Alignment>Left</Alignment>
+            <Label>Environment</Label>
+          </TableColumnHeader>
+        </TableHeaders>
+        <TableRowEntries>
+          <TableRowEntry>
+            <TableColumnItems>
+              <TableColumnItem>
+                <Alignment>Left</Alignment>
+                <ScriptBlock>$_.Subscription.Name</ScriptBlock>
+			  </TableColumnItem>
+			  <TableColumnItem>
+				  <Alignment>Left</Alignment>
+				  <ScriptBlock>$_.Subscription.Id</ScriptBlock>
+			  </TableColumnItem>
+              <TableColumnItem>
+                <Alignment>Left</Alignment>
+                <PropertyName>Account</PropertyName>
+              </TableColumnItem>
+              <TableColumnItem>
+                <Alignment>Left</Alignment>
+                <PropertyName>Environment</PropertyName>
+              </TableColumnItem>
+            </TableColumnItems>
+          </TableRowEntry>
+        </TableRowEntries>
+      </TableControl>
+      <GroupBy>
+        <ScriptBlock>if([System.String]::IsNullOrEmpty($_.Tenant.Name)){$_.Tenant.Id}else{"$($_.Tenant.Name) ($($_.Tenant.Id))"}</ScriptBlock>
+        <Label>Tenant</Label>
+      </GroupBy>
+    </View>
+    <View>
+      <Name>Microsoft.Azure.Commands.Profile.Models.PSAzureEnvironment</Name>
+      <ViewSelectedBy>
+        <TypeName>Microsoft.Azure.Commands.Profile.Models.PSAzureEnvironment</TypeName>
+      </ViewSelectedBy>
+      <TableControl>
+        <TableHeaders>
+          <TableColumnHeader>
+            <Alignment>Left</Alignment>
+            <Label>Name</Label>
+          </TableColumnHeader>
+          <TableColumnHeader>
+            <Alignment>Left</Alignment>
+            <Label>Resource Manager Url</Label>
+          </TableColumnHeader>
+          <TableColumnHeader>
+            <Alignment>Left</Alignment>
+            <Label>ActiveDirectory Authority</Label>
+          </TableColumnHeader>
+        </TableHeaders>
+        <TableRowEntries>
+          <TableRowEntry>
+            <TableColumnItems>
+              <TableColumnItem>
+                <Alignment>Left</Alignment>
+                <PropertyName>Name</PropertyName>
+              </TableColumnItem>
+              <TableColumnItem>
+                <Alignment>Left</Alignment>
+                <PropertyName>ResourceManagerUrl</PropertyName>
+              </TableColumnItem>
+              <TableColumnItem>
+                <Alignment>Left</Alignment>
+                <PropertyName>ActiveDirectoryAuthority</PropertyName>
+              </TableColumnItem>
+            </TableColumnItems>
+          </TableRowEntry>
+        </TableRowEntries>
+      </TableControl>
+    </View>
+    <View>
+      <Name>Microsoft.Azure.Commands.Profile.Models.PSAzureSubscription</Name>
+      <ViewSelectedBy>
+        <TypeName>Microsoft.Azure.Commands.Profile.Models.PSAzureSubscription</TypeName>
+      </ViewSelectedBy>
+      <TableControl>
+        <TableHeaders>
+          <TableColumnHeader>
+            <Alignment>Left</Alignment>
+            <Label>Name</Label>
+          </TableColumnHeader>
+          <TableColumnHeader>
+            <Alignment>Left</Alignment>
+            <Label>Id</Label>
+          </TableColumnHeader>
+          <TableColumnHeader>
+            <Alignment>Left</Alignment>
+            <Label>State</Label>
+          </TableColumnHeader>
+        </TableHeaders>
+        <TableRowEntries>
+          <TableRowEntry>
+            <TableColumnItems>
+              <TableColumnItem>
+                <Alignment>Left</Alignment>
+                <PropertyName>Name</PropertyName>
+              </TableColumnItem>
+              <TableColumnItem>
+                <Alignment>Left</Alignment>
+                <PropertyName>Id</PropertyName>
+              </TableColumnItem>
+              <TableColumnItem>
+                <Alignment>Left</Alignment>
+                <PropertyName>State</PropertyName>
+              </TableColumnItem>
+            </TableColumnItems>
+          </TableRowEntry>
+        </TableRowEntries>
+      </TableControl>
+      <GroupBy>
+        <PropertyName>TenantId</PropertyName>
+        <Label>TenantId</Label>
+      </GroupBy>
+    </View>
+    <View>
+      <Name>Microsoft.Azure.Commands.Profile.Models.PSAzureTenant</Name>
+      <ViewSelectedBy>
+        <TypeName>Microsoft.Azure.Commands.Profile.Models.PSAzureTenant</TypeName>
+      </ViewSelectedBy>
+      <TableControl>
+        <TableHeaders>
+          <TableColumnHeader>
+            <Alignment>Left</Alignment>
+            <Label>Name</Label>
+          </TableColumnHeader>
+          <TableColumnHeader>
+            <Alignment>Left</Alignment>
+            <Label>Id</Label>
+          </TableColumnHeader>
+          <TableColumnHeader>
+            <Alignment>Left</Alignment>
+            <Label>TenantCategory</Label>
+          </TableColumnHeader>
+          <TableColumnHeader>
+            <Alignment>Left</Alignment>
+            <Label>Domains</Label>
+          </TableColumnHeader>
+        </TableHeaders>
+        <TableRowEntries>
+          <TableRowEntry>
+            <TableColumnItems>
+              <TableColumnItem>
+                <Alignment>Left</Alignment>
+                <PropertyName>Name</PropertyName>
+              </TableColumnItem>
+              <TableColumnItem>
+                <Alignment>Left</Alignment>
+                <PropertyName>Id</PropertyName>
+              </TableColumnItem>
+              <TableColumnItem>
+                <Alignment>Left</Alignment>
+                <PropertyName>TenantCategory</PropertyName>
+              </TableColumnItem>
+              <TableColumnItem>
+                <Alignment>Left</Alignment>
+                <PropertyName>Domains</PropertyName>
+              </TableColumnItem>
+            </TableColumnItems>
+          </TableRowEntry>
+        </TableRowEntries>
+      </TableControl>
+    </View>
+    <View>
+      <Name>Microsoft.Azure.Commands.Profile.Models.PSHttpResponse</Name>
+      <ViewSelectedBy>
+        <TypeName>Microsoft.Azure.Commands.Profile.Models.PSHttpResponse</TypeName>
+      </ViewSelectedBy>
+      <ListControl>
+        <ListEntries>
+          <ListEntry>
+            <ListItems>
+              <ListItem>
+                <PropertyName>StatusCode</PropertyName>
+                <Label>StatusCode</Label>
+              </ListItem>
+              <ListItem>
+                <PropertyName>Content</PropertyName>
+                <Label>Content</Label>
+              </ListItem>
+              <ListItem>
+                <ScriptBlock>[Microsoft.Rest.HttpExtensions]::ToJson($_.Headers).ToString()</ScriptBlock>
+                <Label>Headers</Label>
+              </ListItem>
+              <ListItem>
+                <PropertyName>Method</PropertyName>
+                <Label>Method</Label>
+              </ListItem>
+              <ListItem>
+                <PropertyName>RequestUri</PropertyName>
+                <Label>RequestUri</Label>
+              </ListItem>
+              <ListItem>
+                <PropertyName>Version</PropertyName>
+                <Label>Version</Label>
+              </ListItem>
+            </ListItems>
+          </ListEntry>
+        </ListEntries>
+      </ListControl>
+    </View>
+  </ViewDefinitions>
+</Configuration>
+<!-- SIG # Begin signature block -->
+<!-- MIInbAYJKoZIhvcNAQcCoIInXTCCJ1kCAQExDzANBglghkgBZQMEAgEFADB5Bgor -->
+<!-- BgEEAYI3AgEEoGswaTA0BgorBgEEAYI3AgEeMCYCAwEAAAQQH8w7YFlLCE63JNLG -->
+<!-- KX7zUQIBAAIBAAIBAAIBAAIBADAxMA0GCWCGSAFlAwQCAQUABCBO2wAzjE1N37O8 -->
+<!-- FQpkOB9F0rKxoXAt23ms7tvUw0y1i6CCDMkwggYEMIID7KADAgECAhMzAAACHPrN -->
+<!-- xZvoL37EAAAAAAIcMA0GCSqGSIb3DQEBCwUAMFcxCzAJBgNVBAYTAlVTMR4wHAYD -->
+<!-- VQQKExVNaWNyb3NvZnQgQ29ycG9yYXRpb24xKDAmBgNVBAMTH01pY3Jvc29mdCBD -->
+<!-- b2RlIFNpZ25pbmcgUENBIDIwMjQwHhcNMjYwNDE2MTg1OTQxWhcNMjcwNDE1MTg1 -->
+<!-- OTQxWjB0MQswCQYDVQQGEwJVUzETMBEGA1UECBMKV2FzaGluZ3RvbjEQMA4GA1UE -->
+<!-- BxMHUmVkbW9uZDEeMBwGA1UEChMVTWljcm9zb2Z0IENvcnBvcmF0aW9uMR4wHAYD -->
+<!-- VQQDExVNaWNyb3NvZnQgQ29ycG9yYXRpb24wggEiMA0GCSqGSIb3DQEBAQUAA4IB -->
+<!-- DwAwggEKAoIBAQDVsZfgOKmM31HPfoWOoNEiw0SlCiIxUMC0I9NMWbucKOw/e9lP -->
+<!-- oAoehQVu6SG65V4EPzrYsnBnFPNoi4/HoOdjhz1qkrEt4I6tEcxXU6oOeY9zGveC -->
+<!-- /3iBeuhLYxM3M/PkcUoebF+Nednm8OkdSPoDu8imViHPQq/8CQUu0WRR4rE+dMRf -->
+<!-- rpVqfmNi2qWCX94T4MsepijGVkwE//tJg0ryAiYdHT34LSnlG/RSBZmQRGWZ5g8j -->
+<!-- qnKjRParSqMft1gvjuUTVgtWNZfgcLFSK5Wa0myrq8OPcgTGGsRgun+tnSS+IxDT -->
+<!-- xVsAPH1OzvPjwomguByhUe/OcvUN0D5Wmp7xAgMBAAGjggGqMIIBpjAOBgNVHQ8B -->
+<!-- Af8EBAMCB4AwHwYDVR0lBBgwFgYKKwYBBAGCN0wIAQYIKwYBBQUHAwMwHQYDVR0O -->
+<!-- BBYEFNoH7a2YDjOSwpkp6DHcmUS7J+0yMFQGA1UdEQRNMEukSTBHMS0wKwYDVQQL -->
+<!-- EyRNaWNyb3NvZnQgSXJlbGFuZCBPcGVyYXRpb25zIExpbWl0ZWQxFjAUBgNVBAUT -->
+<!-- DTIzMDAxMis1MDc1NjkwHwYDVR0jBBgwFoAUf1k/VCHarU/vBeXmo9ctBpQSCDEw -->
+<!-- YAYDVR0fBFkwVzBVoFOgUYZPaHR0cDovL3d3dy5taWNyb3NvZnQuY29tL3BraW9w -->
+<!-- cy9jcmwvTWljcm9zb2Z0JTIwQ29kZSUyMFNpZ25pbmclMjBQQ0ElMjAyMDI0LmNy -->
+<!-- bDBtBggrBgEFBQcBAQRhMF8wXQYIKwYBBQUHMAKGUWh0dHA6Ly93d3cubWljcm9z -->
+<!-- b2Z0LmNvbS9wa2lvcHMvY2VydHMvTWljcm9zb2Z0JTIwQ29kZSUyMFNpZ25pbmcl -->
+<!-- MjBQQ0ElMjAyMDI0LmNydDAMBgNVHRMBAf8EAjAAMA0GCSqGSIb3DQEBCwUAA4IC -->
+<!-- AQAUnEqhaRXe0T3hIJjvdQErEkrA/7bByjn6t5IArODkkRjzkYwtKMc2yYj2quaN -->
+<!-- rLutWw2YZcngKPy1b71YyDJQTy4NDRwaSh9Tw5thrk3NmcPrAHia5vtcBJ1CgtKK -->
+<!-- 7mQbIcQ22d/N3813ayCDDFewu1+jsZmX+r/aTEqaOM4TVxVtRSkuCy8nAXKuChOK -->
+<!-- Li/zA4XuH8iEYqIsj2YoNaeSxVmeGiERXpKdo3dDmYi0kO5w2D8VS4c3+9h6gElY -->
+<!-- BaAAg/dYErBg27qT3vv0zRDJhJufvCNylA8S7/+8H5E/PV5cng6na9VV/w9OV3qu -->
+<!-- uND6zdGa2EX38Glp50F9AIQk3p2xXmcvorDeM4XJ7UlWYBi6g80J1SSOQnInCYFE -->
+<!-- msfUNn3+1AaTJKSJL83quKArTac2pKhu0Yzzzrzo6HrsRiQKzpnRBb1/dMa6P3hz -->
+<!-- 75XbMRBctNsFhZC07WCmjExdLg2eHW5uV0TY8D5+6wozJf7vF3+WHkYPO85Z+BC6 -->
+<!-- U4FkNbYNycZ9cE4j1tXRdyDCfml6c0HWPHjNVDObrv9lKt3qUqFpX38VCqVCyNOO -->
+<!-- 1UcXfQiVjJw32U2WUKZjt/neJKHEBsm9kFsLuWzkQ53+qcaSaytmsCnk2gOglrlD -->
+<!-- 5d3kKyvvAw+rzm0lT8K38P6PLxfZQHhu4W8dV7Av8N2ZmDCCBr0wggSloAMCAQIC -->
+<!-- EzMAAAA5O7Y3Gb8GHWcAAAAAADkwDQYJKoZIhvcNAQEMBQAwgYgxCzAJBgNVBAYT -->
+<!-- AlVTMRMwEQYDVQQIEwpXYXNoaW5ndG9uMRAwDgYDVQQHEwdSZWRtb25kMR4wHAYD -->
+<!-- VQQKExVNaWNyb3NvZnQgQ29ycG9yYXRpb24xMjAwBgNVBAMTKU1pY3Jvc29mdCBS -->
+<!-- b290IENlcnRpZmljYXRlIEF1dGhvcml0eSAyMDExMB4XDTI0MDgwODIwNTQxOFoX -->
+<!-- DTM2MDMyMjIyMTMwNFowVzELMAkGA1UEBhMCVVMxHjAcBgNVBAoTFU1pY3Jvc29m -->
+<!-- dCBDb3Jwb3JhdGlvbjEoMCYGA1UEAxMfTWljcm9zb2Z0IENvZGUgU2lnbmluZyBQ -->
+<!-- Q0EgMjAyNDCCAiIwDQYJKoZIhvcNAQEBBQADggIPADCCAgoCggIBANgBnB7jOMeq -->
+<!-- lRYHNa265v4IY9fH8TKhemHfPINe1gpLaV3dhg324WwH06LcHbpnsBukCDNitryo -->
+<!-- 0dtS/EW6I/yEL/bLSY8hKpbfQuWusBPr9qazYcDxCW/qnjb5JsI1s8bNOg3bVATv -->
+<!-- QVL4tcf03aTycsz8QeCdM0l/yHRObJ9QqazM1r6VPEOJ7LL+uEEb73w6QCuhs89a -->
+<!-- 1uv1zerOYMnsneRRwCbpyW11IcggU0cRKDDq1pjVJzIbIF6+oiXXbReOsgeI8zu1 -->
+<!-- FyQfK0fVkaya8SmVHQ/tOf23mZ4W9k0Ri22QW9p3UgSC5OUDktKxxcCmGL6tXLfO -->
+<!-- GSWHIIV4YrTJTT6PNty5REojHJuZHArkF9VnHTERWoTjAzfI3kP+5b4alUdhgAZ7 -->
+<!-- ttOu1bVnXfHaqPYl2rPs20ji03LOVWsh/radgE17es5hL+t6lV0eVHrVhsssROWJ -->
+<!-- uz2MXMCt7iw7lFPG9LXKGjsmonn2gotGdHIuEg5JnJMJVmixd5LRlkmgYRZKzhxS -->
+<!-- CwyoGIq0PhaA7Y+VPct5pCHkijcIIDm0nlkK+0KyepolcqGm0T/GYQRMhHJlGOOm -->
+<!-- VQop36wUVUYklUy++vDWeEgEo4s7hxN6mIbf2MSIQ/iIfMZgJxC69oukMUXCrOC3 -->
+<!-- SkE/xIkgpfl22MM1itkZ35nNXkMolU1lAgMBAAGjggFOMIIBSjAOBgNVHQ8BAf8E -->
+<!-- BAMCAYYwEAYJKwYBBAGCNxUBBAMCAQAwHQYDVR0OBBYEFH9ZP1Qh2q1P7wXl5qPX -->
+<!-- LQaUEggxMBkGCSsGAQQBgjcUAgQMHgoAUwB1AGIAQwBBMA8GA1UdEwEB/wQFMAMB -->
+<!-- Af8wHwYDVR0jBBgwFoAUci06AjGQQ7kUBU7h6qfHMdEjiTQwWgYDVR0fBFMwUTBP -->
+<!-- oE2gS4ZJaHR0cDovL2NybC5taWNyb3NvZnQuY29tL3BraS9jcmwvcHJvZHVjdHMv -->
+<!-- TWljUm9vQ2VyQXV0MjAxMV8yMDExXzAzXzIyLmNybDBeBggrBgEFBQcBAQRSMFAw -->
+<!-- TgYIKwYBBQUHMAKGQmh0dHA6Ly93d3cubWljcm9zb2Z0LmNvbS9wa2kvY2VydHMv -->
+<!-- TWljUm9vQ2VyQXV0MjAxMV8yMDExXzAzXzIyLmNydDANBgkqhkiG9w0BAQwFAAOC -->
+<!-- AgEAFJQfOChP7onn6fLIMKrSlN1WYKwDFgAddymOUO3FrM8d7B/W/iQ6DxXsDn7D -->
+<!-- 5W4wMwYeLystcEqfkjz4NURRgazyMu5yRzQh4LqjA4tStTcJh1opExo7nn5PuPBY -->
+<!-- nbu0+THSuVHTe0VTTPVhily/piFrDo3axQ9P4C+Ol5yet+2gTfekICS5xS+cYfSI -->
+<!-- vgn0JksVBVMYVI5QFu/qhnLhsEFEUzG8fvv0hjgkO+lkpV9ty6GkN4vdnd7ya6Q6 -->
+<!-- aR9y34aiM1qmxaxBi6OUnyNl6fkuun/diTFnYDLTppOkr/mg5WSfCiDVMNCxtj4w -->
+<!-- PKC5OmHm1DQIt/MNokbbH3UGsFP1QbzsLocuSqLCvH09Io3fDPTmscR9Y75G4qX7 -->
+<!-- RTX8AdBPo0I6OEojf39zuFZt0qOHm65YWQE69cZM2ueE1MB05dNNgHK9gTE7zKvK -->
+<!-- /fg8B2qjW88MT/WF5V5uvZGtqa9FSL2RazArA+rDPuf6JGYz4HpgMZHB4S6szWSK -->
+<!-- YBv0VisCzfxgeU+dquXW9bd0auYlOB58DPcOYKdc3Se94g+xL4pcEhbB54JOgAkw -->
+<!-- YTu/9dLeH2pDqeJZAABVDWRQCaXfO5LgyKwKCLYXpigrZYCjUSBcr+Ve8PFWMhVT -->
+<!-- Ql0v4q8J/AUmQN5W4n101cY2L4A7GTQG1h32HHAvfQESWP0xghn5MIIZ9QIBATBu -->
+<!-- MFcxCzAJBgNVBAYTAlVTMR4wHAYDVQQKExVNaWNyb3NvZnQgQ29ycG9yYXRpb24x -->
+<!-- KDAmBgNVBAMTH01pY3Jvc29mdCBDb2RlIFNpZ25pbmcgUENBIDIwMjQCEzMAAAIc -->
+<!-- +s3Fm+gvfsQAAAAAAhwwDQYJYIZIAWUDBAIBBQCgga4wGQYJKoZIhvcNAQkDMQwG -->
+<!-- CisGAQQBgjcCAQQwHAYKKwYBBAGCNwIBCzEOMAwGCisGAQQBgjcCARUwLwYJKoZI -->
+<!-- hvcNAQkEMSIEIHzw56ryJB93CjImr9QXVnAru+xb5w4cxnlO0KVFmh7hMEIGCisG -->
+<!-- AQQBgjcCAQwxNDAyoBSAEgBNAGkAYwByAG8AcwBvAGYAdKEagBhodHRwOi8vd3d3 -->
+<!-- Lm1pY3Jvc29mdC5jb20wDQYJKoZIhvcNAQEBBQAEggEAKzJlJcdtjTjdDSzU4/Mw -->
+<!-- v8neipR9CwJDFYK90iT7rg9oSDOHjy882tl1zqJll+qwj6Wf89o0By8D+g96EDxZ -->
+<!-- ZUK3aYAqojUCvD+3j80+5Hg9VlTDfxpbNOQzzJyUdXd0kusqmT5ZXooXjiUfWlWK -->
+<!-- Z+Zy/pESPlSLMYxrImObY30EyKPYa31f0wSBFBLRuCV8nMiE5nBw3G3LPDZzJB/2 -->
+<!-- f5VfMVOUGiyppFHhbYoB+J82GgmfVrhZiqKpcDl4qrURDvLw6pddxFlsaWOY7qt9 -->
+<!-- RFoHROc97vyN8TSBmAMiT8AREQgSbXnylpxvL6zz7NKV7IXBmgBba50mbosSwOR9 -->
+<!-- caGCF6swghenBgorBgEEAYI3AwMBMYIXlzCCF5MGCSqGSIb3DQEHAqCCF4QwgheA -->
+<!-- AgEDMQ8wDQYJYIZIAWUDBAIBBQAwggFYBgsqhkiG9w0BCRABBKCCAUcEggFDMIIB -->
+<!-- PwIBAQYKKwYBBAGEWQoDATAxMA0GCWCGSAFlAwQCAQUABCBiURnvFW2WQQakWs1W -->
+<!-- RVA9YZdRY7YbZBdYmFrbbPuYWgIGahBgyDtqGBEyMDI2MDUyNzEwMzE0NC41WjAE -->
+<!-- gAIB9KCB2aSB1jCB0zELMAkGA1UEBhMCVVMxEzARBgNVBAgTCldhc2hpbmd0b24x -->
+<!-- EDAOBgNVBAcTB1JlZG1vbmQxHjAcBgNVBAoTFU1pY3Jvc29mdCBDb3Jwb3JhdGlv -->
+<!-- bjEtMCsGA1UECxMkTWljcm9zb2Z0IElyZWxhbmQgT3BlcmF0aW9ucyBMaW1pdGVk -->
+<!-- MScwJQYDVQQLEx5uU2hpZWxkIFRTUyBFU046MzYwNS0wNUUwLUQ5NDcxJTAjBgNV -->
+<!-- BAMTHE1pY3Jvc29mdCBUaW1lLVN0YW1wIFNlcnZpY2WgghH7MIIHKDCCBRCgAwIB -->
+<!-- AgITMwAAAhOwQzVmz6+V6AABAAACEzANBgkqhkiG9w0BAQsFADB8MQswCQYDVQQG -->
+<!-- EwJVUzETMBEGA1UECBMKV2FzaGluZ3RvbjEQMA4GA1UEBxMHUmVkbW9uZDEeMBwG -->
+<!-- A1UEChMVTWljcm9zb2Z0IENvcnBvcmF0aW9uMSYwJAYDVQQDEx1NaWNyb3NvZnQg -->
+<!-- VGltZS1TdGFtcCBQQ0EgMjAxMDAeFw0yNTA4MTQxODQ4MTdaFw0yNjExMTMxODQ4 -->
+<!-- MTdaMIHTMQswCQYDVQQGEwJVUzETMBEGA1UECBMKV2FzaGluZ3RvbjEQMA4GA1UE -->
+<!-- BxMHUmVkbW9uZDEeMBwGA1UEChMVTWljcm9zb2Z0IENvcnBvcmF0aW9uMS0wKwYD -->
+<!-- VQQLEyRNaWNyb3NvZnQgSXJlbGFuZCBPcGVyYXRpb25zIExpbWl0ZWQxJzAlBgNV -->
+<!-- BAsTHm5TaGllbGQgVFNTIEVTTjozNjA1LTA1RTAtRDk0NzElMCMGA1UEAxMcTWlj -->
+<!-- cm9zb2Z0IFRpbWUtU3RhbXAgU2VydmljZTCCAiIwDQYJKoZIhvcNAQEBBQADggIP -->
+<!-- ADCCAgoCggIBAPSZeuC6GcQyDUhYM/vSkuTs7+ZuePHj1c3PUV1nuE+PzKZX4GuH -->
+<!-- qtdkRnaeXFb543Xub8X6tmsf457u71FuK2TeJjlJub4fpHGLEJWEOdxcICAd5xI3 -->
+<!-- EB6Jqxt5mXv6M4xUgK+iW4JSrSHgMkj8wHBc8gHq+ZSzVBwRL0DDPATozMmqQr4d -->
+<!-- MbIOMShXFRCUCyhHwhgX3zGSP2prrRxW9wlE2e2laRtihxBVDZWdb8DCr8V0z0Q5 -->
+<!-- 28Dxs8sqiSc537CzR0OL17drbUtT3gqBiNITdT3qvMhrCFzPaKHMAtOgxjUjP+Cw -->
+<!-- Mdrir8JlJ+jcC3NPrZr58usNvK2S3o7JEX51VqHxL9ZlmNIx1Jx68EhgUvIFT/YH -->
+<!-- AbOj+YNDqSTzH8XVJB10ZHDDz1tISD/DW1vFuUrqfB7sJ0im46cgJRgVHTP1ea2W -->
+<!-- 9LGZpJ+9eK+lCxivnCywDekdxYV+jdJ4+uBduy0ytgW0tKSWWl46NHgzc9UHMXiB -->
+<!-- S1IBfkQbC2A5/BPHApHsSvDZbdxovcyX+ecOlH02fpMEzMTKhcYe/k38e/mgTm2f -->
+<!-- p8fetQLYqgMu81VevaPy1kXSj2Xb2Z/REshm05z345AREb9tqa0pRE5UcMz+m5hF -->
+<!-- Tili1lcMbsIe21FlLlG9XI/d877bUGBkGreRPQCyyTZpbyygrJAe62i7AgMBAAGj -->
+<!-- ggFJMIIBRTAdBgNVHQ4EFgQUE54QSsfha8qYUFjEYqR+PbDBQDowHwYDVR0jBBgw -->
+<!-- FoAUn6cVXQBeYl2D9OXSZacbUzUZ6XIwXwYDVR0fBFgwVjBUoFKgUIZOaHR0cDov -->
+<!-- L3d3dy5taWNyb3NvZnQuY29tL3BraW9wcy9jcmwvTWljcm9zb2Z0JTIwVGltZS1T -->
+<!-- dGFtcCUyMFBDQSUyMDIwMTAoMSkuY3JsMGwGCCsGAQUFBwEBBGAwXjBcBggrBgEF -->
+<!-- BQcwAoZQaHR0cDovL3d3dy5taWNyb3NvZnQuY29tL3BraW9wcy9jZXJ0cy9NaWNy -->
+<!-- b3NvZnQlMjBUaW1lLVN0YW1wJTIwUENBJTIwMjAxMCgxKS5jcnQwDAYDVR0TAQH/ -->
+<!-- BAIwADAWBgNVHSUBAf8EDDAKBggrBgEFBQcDCDAOBgNVHQ8BAf8EBAMCB4AwDQYJ -->
+<!-- KoZIhvcNAQELBQADggIBAIJsWiaxqkNg+lCYWekJdkmRTmjbhm1ty8wfhEvpdgQd -->
+<!-- TCbQUUhXYv4VWN9zacbCUIUOUy1adA12DpCKD0HNe6x/iFYXpjvIwrflOiNUyMOn -->
+<!-- Ee3PrRKPyY6ehKhFNXOP5q2jI4B4UPq2gvzlAJvfANa+GyDx7bAZi0ThpnhOVyyB -->
+<!-- WgSGVh74dgjlyEyjm11XecBrSdXWWXcGhwAlxedOo7WvrqFHcswHrjZUzy062fJ8 -->
+<!-- ocRsJPVYenog0OwkDFkkmvAyUvT1F43qIvb03Uu2TF6rvrb+kM98baARefmBSuLh -->
+<!-- PpohrPdBcZtFStpVq5hYY5EZec8qBzncBu7KTWJA6JgjzViLnVEJkGCqbfx7LKX3 -->
+<!-- G/saZ1iA0HTM4BPKY9b6cC4FhJx+y7U+HWQnqA6PTyuNEcQQ/JCie+vZ4JBMH8Ag -->
+<!-- 9hF/zEJO/XiLzoaZx9dhrlQcr2imZOV2b6rTzjTcK/Kv6gN/O+yLlsFoJ2nl/qa6 -->
+<!-- cNHWf0C7Wxhla4D/k0UI7ftnXGQOT91+C8ADYYj7MtDpeFwnY+zsQSxbzs7Ajwz2 -->
+<!-- lZ5KfnXwxRvjTgYq+2qkyevOttqcpoNVfuoHP9Ub8Qv8IL2MhtN93nCar9Dp9GUT -->
+<!-- WK/ovzpMIANxz9Wiw9Gh6xKcOpbdNut4kZAr63HXDlvMN4wvEybmhlsgtkvYxI84 -->
+<!-- MIIHcTCCBVmgAwIBAgITMwAAABXF52ueAptJmQAAAAAAFTANBgkqhkiG9w0BAQsF -->
+<!-- ADCBiDELMAkGA1UEBhMCVVMxEzARBgNVBAgTCldhc2hpbmd0b24xEDAOBgNVBAcT -->
+<!-- B1JlZG1vbmQxHjAcBgNVBAoTFU1pY3Jvc29mdCBDb3Jwb3JhdGlvbjEyMDAGA1UE -->
+<!-- AxMpTWljcm9zb2Z0IFJvb3QgQ2VydGlmaWNhdGUgQXV0aG9yaXR5IDIwMTAwHhcN -->
+<!-- MjEwOTMwMTgyMjI1WhcNMzAwOTMwMTgzMjI1WjB8MQswCQYDVQQGEwJVUzETMBEG -->
+<!-- A1UECBMKV2FzaGluZ3RvbjEQMA4GA1UEBxMHUmVkbW9uZDEeMBwGA1UEChMVTWlj -->
+<!-- cm9zb2Z0IENvcnBvcmF0aW9uMSYwJAYDVQQDEx1NaWNyb3NvZnQgVGltZS1TdGFt -->
+<!-- cCBQQ0EgMjAxMDCCAiIwDQYJKoZIhvcNAQEBBQADggIPADCCAgoCggIBAOThpkzn -->
+<!-- tHIhC3miy9ckeb0O1YLT/e6cBwfSqWxOdcjKNVf2AX9sSuDivbk+F2Az/1xPx2b3 -->
+<!-- lVNxWuJ+Slr+uDZnhUYjDLWNE893MsAQGOhgfWpSg0S3po5GawcU88V29YZQ3MFE -->
+<!-- yHFcUTE3oAo4bo3t1w/YJlN8OWECesSq/XJprx2rrPY2vjUmZNqYO7oaezOtgFt+ -->
+<!-- jBAcnVL+tuhiJdxqD89d9P6OU8/W7IVWTe/dvI2k45GPsjksUZzpcGkNyjYtcI4x -->
+<!-- yDUoveO0hyTD4MmPfrVUj9z6BVWYbWg7mka97aSueik3rMvrg0XnRm7KMtXAhjBc -->
+<!-- TyziYrLNueKNiOSWrAFKu75xqRdbZ2De+JKRHh09/SDPc31BmkZ1zcRfNN0Sidb9 -->
+<!-- pSB9fvzZnkXftnIv231fgLrbqn427DZM9ituqBJR6L8FA6PRc6ZNN3SUHDSCD/AQ -->
+<!-- 8rdHGO2n6Jl8P0zbr17C89XYcz1DTsEzOUyOArxCaC4Q6oRRRuLRvWoYWmEBc8pn -->
+<!-- ol7XKHYC4jMYctenIPDC+hIK12NvDMk2ZItboKaDIV1fMHSRlJTYuVD5C4lh8zYG -->
+<!-- NRiER9vcG9H9stQcxWv2XFJRXRLbJbqvUAV6bMURHXLvjflSxIUXk8A8FdsaN8cI -->
+<!-- FRg/eKtFtvUeh17aj54WcmnGrnu3tz5q4i6tAgMBAAGjggHdMIIB2TASBgkrBgEE -->
+<!-- AYI3FQEEBQIDAQABMCMGCSsGAQQBgjcVAgQWBBQqp1L+ZMSavoKRPEY1Kc8Q/y8E -->
+<!-- 7jAdBgNVHQ4EFgQUn6cVXQBeYl2D9OXSZacbUzUZ6XIwXAYDVR0gBFUwUzBRBgwr -->
+<!-- BgEEAYI3TIN9AQEwQTA/BggrBgEFBQcCARYzaHR0cDovL3d3dy5taWNyb3NvZnQu -->
+<!-- Y29tL3BraW9wcy9Eb2NzL1JlcG9zaXRvcnkuaHRtMBMGA1UdJQQMMAoGCCsGAQUF -->
+<!-- BwMIMBkGCSsGAQQBgjcUAgQMHgoAUwB1AGIAQwBBMAsGA1UdDwQEAwIBhjAPBgNV -->
+<!-- HRMBAf8EBTADAQH/MB8GA1UdIwQYMBaAFNX2VsuP6KJcYmjRPZSQW9fOmhjEMFYG -->
+<!-- A1UdHwRPME0wS6BJoEeGRWh0dHA6Ly9jcmwubWljcm9zb2Z0LmNvbS9wa2kvY3Js -->
+<!-- L3Byb2R1Y3RzL01pY1Jvb0NlckF1dF8yMDEwLTA2LTIzLmNybDBaBggrBgEFBQcB -->
+<!-- AQROMEwwSgYIKwYBBQUHMAKGPmh0dHA6Ly93d3cubWljcm9zb2Z0LmNvbS9wa2kv -->
+<!-- Y2VydHMvTWljUm9vQ2VyQXV0XzIwMTAtMDYtMjMuY3J0MA0GCSqGSIb3DQEBCwUA -->
+<!-- A4ICAQCdVX38Kq3hLB9nATEkW+Geckv8qW/qXBS2Pk5HZHixBpOXPTEztTnXwnE2 -->
+<!-- P9pkbHzQdTltuw8x5MKP+2zRoZQYIu7pZmc6U03dmLq2HnjYNi6cqYJWAAOwBb6J -->
+<!-- 6Gngugnue99qb74py27YP0h1AdkY3m2CDPVtI1TkeFN1JFe53Z/zjj3G82jfZfak -->
+<!-- Vqr3lbYoVSfQJL1AoL8ZthISEV09J+BAljis9/kpicO8F7BUhUKz/AyeixmJ5/AL -->
+<!-- aoHCgRlCGVJ1ijbCHcNhcy4sa3tuPywJeBTpkbKpW99Jo3QMvOyRgNI95ko+ZjtP -->
+<!-- u4b6MhrZlvSP9pEB9s7GdP32THJvEKt1MMU0sHrYUP4KWN1APMdUbZ1jdEgssU5H -->
+<!-- LcEUBHG/ZPkkvnNtyo4JvbMBV0lUZNlz138eW0QBjloZkWsNn6Qo3GcZKCS6OEua -->
+<!-- bvshVGtqRRFHqfG3rsjoiV5PndLQTHa1V1QJsWkBRH58oWFsc/4Ku+xBZj1p/cvB -->
+<!-- QUl+fpO+y/g75LcVv7TOPqUxUYS8vwLBgqJ7Fx0ViY1w/ue10CgaiQuPNtq6TPmb -->
+<!-- /wrpNPgkNWcr4A245oyZ1uEi6vAnQj0llOZ0dFtq0Z4+7X6gMTN9vMvpe784cETR -->
+<!-- kPHIqzqKOghif9lwY1NNje6CbaUFEMFxBmoQtB1VM1izoXBm8qGCA1YwggI+AgEB -->
+<!-- MIIBAaGB2aSB1jCB0zELMAkGA1UEBhMCVVMxEzARBgNVBAgTCldhc2hpbmd0b24x -->
+<!-- EDAOBgNVBAcTB1JlZG1vbmQxHjAcBgNVBAoTFU1pY3Jvc29mdCBDb3Jwb3JhdGlv -->
+<!-- bjEtMCsGA1UECxMkTWljcm9zb2Z0IElyZWxhbmQgT3BlcmF0aW9ucyBMaW1pdGVk -->
+<!-- MScwJQYDVQQLEx5uU2hpZWxkIFRTUyBFU046MzYwNS0wNUUwLUQ5NDcxJTAjBgNV -->
+<!-- BAMTHE1pY3Jvc29mdCBUaW1lLVN0YW1wIFNlcnZpY2WiIwoBATAHBgUrDgMCGgMV -->
+<!-- AJgRPEgo8YI2nJsvP1RHZOzcaUemoIGDMIGApH4wfDELMAkGA1UEBhMCVVMxEzAR -->
+<!-- BgNVBAgTCldhc2hpbmd0b24xEDAOBgNVBAcTB1JlZG1vbmQxHjAcBgNVBAoTFU1p -->
+<!-- Y3Jvc29mdCBDb3Jwb3JhdGlvbjEmMCQGA1UEAxMdTWljcm9zb2Z0IFRpbWUtU3Rh -->
+<!-- bXAgUENBIDIwMTAwDQYJKoZIhvcNAQELBQACBQDtwM2hMCIYDzIwMjYwNTI3MDE1 -->
+<!-- NTQ1WhgPMjAyNjA1MjgwMTU1NDVaMHQwOgYKKwYBBAGEWQoEATEsMCowCgIFAO3A -->
+<!-- zaECAQAwBwIBAAICDb8wBwIBAAICF6QwCgIFAO3CHyECAQAwNgYKKwYBBAGEWQoE -->
+<!-- AjEoMCYwDAYKKwYBBAGEWQoDAqAKMAgCAQACAwehIKEKMAgCAQACAwGGoDANBgkq -->
+<!-- hkiG9w0BAQsFAAOCAQEAtdds81xECbCpfN449ChNhmKzM462AGAIIYqR5CDUaN2Y -->
+<!-- Lm1Txi6FeMdEmHVqx8uEfF5/zzhgNfJhpViyr4ScvmKIQdllWti0nuwWHXVtnCSO -->
+<!-- S10gQMm7LgJNgDMF604S3zk1rJTNx+K8ZlV5RfUHMFKmkOW/UKmsTeJkfAgHhFCN -->
+<!-- xTtFMttoo2YWgPolzqBFrFqLmwgSCulXEVr9uxGa+5LKMibd9NvHbz8lyPu8zyZi -->
+<!-- zJIcwTS+yhFaLgW0xxxF23JlNAH0Oj29DMcD3MnMBmDmVzEUwzNb7yQfhTbviACj -->
+<!-- aHGyF2wZfWeIoPsi+GDk/zwsRigPfz5JIr67Z4W7UDGCBA0wggQJAgEBMIGTMHwx -->
+<!-- CzAJBgNVBAYTAlVTMRMwEQYDVQQIEwpXYXNoaW5ndG9uMRAwDgYDVQQHEwdSZWRt -->
+<!-- b25kMR4wHAYDVQQKExVNaWNyb3NvZnQgQ29ycG9yYXRpb24xJjAkBgNVBAMTHU1p -->
+<!-- Y3Jvc29mdCBUaW1lLVN0YW1wIFBDQSAyMDEwAhMzAAACE7BDNWbPr5XoAAEAAAIT -->
+<!-- MA0GCWCGSAFlAwQCAQUAoIIBSjAaBgkqhkiG9w0BCQMxDQYLKoZIhvcNAQkQAQQw -->
+<!-- LwYJKoZIhvcNAQkEMSIEIECXpWLKwS5uDkRgPbs79dd0kyM4pNsEHRhZVgJ1OZi4 -->
+<!-- MIH6BgsqhkiG9w0BCRACLzGB6jCB5zCB5DCBvQQgzOEJbRSFM/CeA4wMz+J1aHWb -->
+<!-- 0MWBpXlCH6fOjmucWGgwgZgwgYCkfjB8MQswCQYDVQQGEwJVUzETMBEGA1UECBMK -->
+<!-- V2FzaGluZ3RvbjEQMA4GA1UEBxMHUmVkbW9uZDEeMBwGA1UEChMVTWljcm9zb2Z0 -->
+<!-- IENvcnBvcmF0aW9uMSYwJAYDVQQDEx1NaWNyb3NvZnQgVGltZS1TdGFtcCBQQ0Eg -->
+<!-- MjAxMAITMwAAAhOwQzVmz6+V6AABAAACEzAiBCCHJ3mxsBz3WNQY3f+dl8piXR43 -->
+<!-- xS+dCnqghObvNoL4BjANBgkqhkiG9w0BAQsFAASCAgARle1yLaK0sa9I+L49sA1L -->
+<!-- SnWs8duT9hrfiUU3OIoKS9DvR4PFzcpFBR9mkgMxBJSoV7Qd/LEnZzRqvyZv13FX -->
+<!-- BWPB2bYqDKXTXppLT6d4a8QeNBxs0n0T8OtcebyA5EUALeYfoTR8BF6lteDpZ3dD -->
+<!-- 3x4L0Btacu3tritekyIzLnkqJxDIlKhUbKRUM9rm+mP4vNueimxoK4yWsGQKnRHK -->
+<!-- DUjvauZRHoNrqYi2MA4iJYfJKbMOFNrnZABlDYUY89GXtt7muWw7o6dVdf5X93s6 -->
+<!-- +7K1K7eG6xhPCFagBsB5dQIZtV35tiZvTXf0h5eMwn1mhjdXbHxa1iwa94XJEzLT -->
+<!-- MUv21FZoo87GgRUkSZgWgfsFci65upO2iHKVrQE4BavxNGrvyt4roi2bQ8pTHaZN -->
+<!-- iORc2bAHBt5GAgWoWlfaiTkvexi959KybUu8MEyYH+L5ZXXGW3yCx6IYZRwjFMMr -->
+<!-- CQBiON9jPjmXJ5MYa3w+xD5E2IIsI8LwTtMjrg/lObzXEK16gocUxOGfH0eWOt3G -->
+<!-- iJoN+N7ydbsLzs1GnNJ5SRxLplkyxUp8bKoQlfg4mSvBhR216fievhrI4SPrg6I4 -->
+<!-- 1j/UDxDvwiNGJCYrVwG080VDj0t8Fdv9YnzSZBVehJcPxITfaE9nN2L+5dwdQH/s -->
+<!-- 51QP0zet7v2KYCCGHyjurQ== -->
+<!-- SIG # End signature block -->
