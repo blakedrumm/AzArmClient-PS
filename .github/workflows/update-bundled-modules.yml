@@ -36,9 +36,23 @@ jobs:
       - name: Register PSGallery as trusted
         shell: pwsh
         run: |
-          Set-PSRepository -Name PSGallery -InstallationPolicy Trusted -ErrorAction SilentlyContinue
-          if (Get-Command -Name Set-PSResourceRepository -ErrorAction SilentlyContinue) {
-              Set-PSResourceRepository -Name PSGallery -Trusted -ErrorAction SilentlyContinue
+          # Register the gallery when the runner does not already have it. Calling
+          # Set-PSRepository on a missing source throws a terminating error that
+          # -ErrorAction SilentlyContinue does not suppress, which previously
+          # failed the whole job before any rebuild could happen.
+          if (-not (Get-PSRepository -Name PSGallery -ErrorAction SilentlyContinue)) {
+              try { Register-PSRepository -Default -ErrorAction Stop } catch { Write-Output "Register-PSRepository -Default: $($_.Exception.Message)" }
+          }
+          if (Get-PSRepository -Name PSGallery -ErrorAction SilentlyContinue) {
+              Set-PSRepository -Name PSGallery -InstallationPolicy Trusted -ErrorAction SilentlyContinue
+          }
+          if (Get-Command -Name Get-PSResourceRepository -ErrorAction SilentlyContinue) {
+              if (-not (Get-PSResourceRepository -Name PSGallery -ErrorAction SilentlyContinue)) {
+                  try { Register-PSResourceRepository -PSGallery -Trusted -ErrorAction Stop } catch { Write-Output "Register-PSResourceRepository -PSGallery: $($_.Exception.Message)" }
+              }
+              elseif (Get-Command -Name Set-PSResourceRepository -ErrorAction SilentlyContinue) {
+                  Set-PSResourceRepository -Name PSGallery -Trusted -ErrorAction SilentlyContinue
+              }
           }
 
       - name: Check for updates and rebuild
