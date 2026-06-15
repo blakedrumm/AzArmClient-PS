@@ -3,7 +3,7 @@
   "tool": {
     "name": "ArmClient-PS",
     "version": "1.0.4",
-    "builtUtc": "2026-06-02T10:46:25.1321781Z",
+    "builtUtc": "2026-06-15T22:30:36.6891246Z",
     "author": "Blake Drumm (blakedrumm@microsoft.com)"
   },
   "requiredModules": [

@@ -989,7 +989,12 @@ function Wait-ArmLongRunningOperation {
         $latestResponse=Get-LastPipelineValueSafe -Values @(Invoke-ArmRequestCore -RequestMethod 'GET' -RequestInfo $pollRequestInfo -Payload $null -ValidatedHeaders $ValidatedHeaders)
         $state=Get-LongRunningOperationState -Response $latestResponse; Write-Log -Level 'INFO' -Message ("Long-running ARM operation state: {0}" -f $state)
         switch -Regex ($state) {
-            '^(Succeeded)$' { if($InitialMethod -ne 'DELETE'){ return (Get-LastPipelineValueSafe -Values @(Invoke-ArmRequestCore -RequestMethod 'GET' -RequestInfo $InitialRequestInfo -Payload $null -ValidatedHeaders $ValidatedHeaders)) }; return $latestResponse }
+            # Only PUT/PATCH leave behind a GET-able resource at the original URI,
+            # so re-read those to return the final resource representation. POST
+            # action endpoints (for example initiateVerification/cancelVerification)
+            # and DELETE expose no such resource, so return the terminal operation
+            # status response instead of issuing a GET that ARM rejects with 404.
+            '^(Succeeded)$' { if($InitialMethod -in @('PUT','PATCH')){ return (Get-LastPipelineValueSafe -Values @(Invoke-ArmRequestCore -RequestMethod 'GET' -RequestInfo $InitialRequestInfo -Payload $null -ValidatedHeaders $ValidatedHeaders)) }; return $latestResponse }
             '^(Failed|Canceled|Cancelled)$' { $errorDetails=Get-ArmErrorDetails -Response $latestResponse; throw "Long-running ARM operation failed. $($errorDetails.Code): $($errorDetails.Message)" }
             default { continue }
         }

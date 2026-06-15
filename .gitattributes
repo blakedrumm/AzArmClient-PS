@@ -1,0 +1,32 @@
+# ───────────────────────────────────────────────────────────────────────────────
+# Byte-fidelity rules for the bundled package and SHA-256 manifest validation.
+# ───────────────────────────────────────────────────────────────────────────────
+# Build-BundledModules.ps1 records a SHA-256 hash for every packaged file in
+# Manifest/Files.sha256.json, and ArmClient-PS.ps1 re-validates those hashes at
+# runtime. Binary and non-normalized files are hashed raw, so Git must NOT apply
+# any line-ending conversion to packaged content. Without these rules the
+# automated update workflow (Update-BundledModules.ps1) commits from a Windows
+# runner and Git rewrites EOLs on checkout, breaking hash validation.
+
+# Default: do not let Git auto-convert line endings on content it guesses is text.
+* -text
+
+# Repository PowerShell and metadata sources use LF so the CRLF->LF-normalized
+# manifest hashes are reproducible regardless of the OS running the automation.
+*.ps1    text eol=lf
+*.psm1   text eol=lf
+*.psd1   text eol=lf
+*.ps1xml text eol=lf
+*.json   text eol=lf
+*.yml    text eol=lf
+*.yaml   text eol=lf
+*.md     text eol=lf
+
+# Treat the entire bundled module tree as binary so Git checks it out
+# byte-for-byte identical to what the build hashed into the manifest. This rule
+# is intentionally last so it overrides the per-extension rules above for any
+# packaged module file (for example .psd1/.dll/.p7s under Modules/).
+Modules/** binary
+
+# The hash manifest is read back exactly as written; never convert it.
+Manifest/Files.sha256.json -text
