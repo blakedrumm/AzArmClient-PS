@@ -41,9 +41,52 @@ if (-not (Test-Path -LiteralPath $mainScript -PathType Leaf)) {
     throw "Main script not found at '$mainScript'."
 }
 
+function Initialize-PSGalleryRepository {
+    [CmdletBinding()]
+    param([Parameter()][string]$RepositoryName = 'PSGallery')
+
+    # Unattended runners do not always have PSGallery registered yet. The original
+    # workflow only called Set-PSRepository, which throws a terminating error when
+    # the source is missing (e.g. "No repository with the name 'PSGallery' was
+    # found"). That aborted the job before the build ran, so Modules/, Versions.json
+    # and Files.sha256.json were never rebuilt. Register the source when it is
+    # absent and trust it, tolerating any provider quirks so the run can continue.
+
+    # PowerShellGet (V2): register the default gallery when missing, then trust it
+    # so Find-Module / Save-Module never prompt during non-interactive runs.
+    if (Get-Command -Name Get-PSRepository -ErrorAction SilentlyContinue) {
+        if (-not (Get-PSRepository -Name $RepositoryName -ErrorAction SilentlyContinue)) {
+            try { Register-PSRepository -Default -ErrorAction Stop 2>$null }
+            catch { Write-Output "  Could not register default PSRepository: $($_.Exception.Message)" }
+        }
+        if (Get-PSRepository -Name $RepositoryName -ErrorAction SilentlyContinue) {
+            try { Set-PSRepository -Name $RepositoryName -InstallationPolicy Trusted -ErrorAction Stop 2>$null }
+            catch { Write-Output "  Could not set PSRepository trust: $($_.Exception.Message)" }
+        }
+    }
+
+    # PSResourceGet (V3): PSGallery ships registered by default, but register it
+    # when absent and ensure it is trusted for non-interactive Save-PSResource.
+    if (Get-Command -Name Get-PSResourceRepository -ErrorAction SilentlyContinue) {
+        if (-not (Get-PSResourceRepository -Name $RepositoryName -ErrorAction SilentlyContinue)) {
+            try { Register-PSResourceRepository -PSGallery -Trusted -ErrorAction Stop 2>$null }
+            catch { Write-Output "  Could not register PSResource PSGallery: $($_.Exception.Message)" }
+        }
+        elseif (Get-Command -Name Set-PSResourceRepository -ErrorAction SilentlyContinue) {
+            try { Set-PSResourceRepository -Name $RepositoryName -Trusted -ErrorAction Stop 2>$null }
+            catch { Write-Output "  Could not set PSResourceRepository trust: $($_.Exception.Message)" }
+        }
+    }
+}
+
 # ---------------------------------------------------------------------------
 # 1. Parse current pinned modules from Build-BundledModules.ps1
 # ---------------------------------------------------------------------------
+Write-Output '--- Ensuring PSGallery is registered and trusted ---'
+# Runs in the same session that later invokes the build, so the registration
+# also covers the build's Save-PSResource / Save-Module download step.
+Initialize-PSGalleryRepository
+
 Write-Output '--- Parsing current pinned module versions ---'
 $buildContent = Get-Content -LiteralPath $buildScript -Raw
 
