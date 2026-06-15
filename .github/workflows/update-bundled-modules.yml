@@ -41,14 +41,14 @@ jobs:
           # -ErrorAction SilentlyContinue does not suppress, which previously
           # failed the whole job before any rebuild could happen.
           if (-not (Get-PSRepository -Name PSGallery -ErrorAction SilentlyContinue)) {
-              try { Register-PSRepository -Default -ErrorAction Stop } catch { Write-Host "Register-PSRepository -Default: $($_.Exception.Message)" }
+              try { Register-PSRepository -Default -ErrorAction Stop } catch { Write-Output "Register-PSRepository -Default: $($_.Exception.Message)" }
           }
           if (Get-PSRepository -Name PSGallery -ErrorAction SilentlyContinue) {
               Set-PSRepository -Name PSGallery -InstallationPolicy Trusted -ErrorAction SilentlyContinue
           }
           if (Get-Command -Name Get-PSResourceRepository -ErrorAction SilentlyContinue) {
               if (-not (Get-PSResourceRepository -Name PSGallery -ErrorAction SilentlyContinue)) {
-                  try { Register-PSResourceRepository -PSGallery -Trusted -ErrorAction Stop } catch { Write-Host "Register-PSResourceRepository -PSGallery: $($_.Exception.Message)" }
+                  try { Register-PSResourceRepository -PSGallery -Trusted -ErrorAction Stop } catch { Write-Output "Register-PSResourceRepository -PSGallery: $($_.Exception.Message)" }
               }
               elseif (Get-Command -Name Set-PSResourceRepository -ErrorAction SilentlyContinue) {
                   Set-PSResourceRepository -Name PSGallery -Trusted -ErrorAction SilentlyContinue
