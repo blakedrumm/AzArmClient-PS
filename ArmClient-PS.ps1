@@ -35,9 +35,9 @@ Outputs the relevant API versions for the selected operation preset.
 Script Name: ArmClient-PS.ps1
 Description: Secure ARM-focused REST support utility that uses bundled Az modules.
 Author: Blake Drumm (blakedrumm@microsoft.com)
-Version: 1.0.4
+Version: 1.0.5
 Created Date: 2026-04-03
-Last Updated Date: 2026-06-02
+Last Updated Date: 2026-07-14
 Requirements: Windows PowerShell 5.1 or PowerShell 7.x, bundled Az.Accounts module and dependencies.
 Environments: Supports all Azure cloud environments including AzureCloud, AzureUSGovernment, AzureChinaCloud,
               AzureUSNat, AzureUSSec, and custom environments registered with Add-AzEnvironment (e.g. Azure Stack).
@@ -92,7 +92,7 @@ if ([Net.ServicePointManager]::SecurityProtocol -band [Net.SecurityProtocolType]
 $script:Configuration = [ordered]@{
     ScriptName                   = 'ArmClient-PS.ps1'
     ToolName                     = 'ArmClient-PS'
-    Version                      = '1.0.4'
+    Version                      = '1.0.5'
     Author                       = 'Blake Drumm (blakedrumm@microsoft.com)'
     RequiredRootModules          = @('Az.Accounts')
     SupportedBuiltInEnvironments = @('AzureCloud','AzureUSGovernment','AzureChinaCloud','AzureUSNat','AzureUSSec')
@@ -414,6 +414,7 @@ function Import-ResolvedModule {
     [CmdletBinding()] param([Parameter(Mandatory=$true)][pscustomobject]$ResolutionItem)
     # Try the preferred candidate first and only fall back if that import fails.
     $queue = [Collections.Generic.List[object]]::new(); if ($ResolutionItem.PreferredCandidate) { $queue.Add($ResolutionItem.PreferredCandidate) }; if ($ResolutionItem.FallbackCandidate -and ($ResolutionItem.PreferredCandidate -eq $null -or $ResolutionItem.FallbackCandidate.ManifestPath -ne $ResolutionItem.PreferredCandidate.ManifestPath)) { $queue.Add($ResolutionItem.FallbackCandidate) }
+    $assemblyConflictDetected = $false
     foreach ($candidate in $queue) {
         try {
             $loaded = Get-Module -Name $candidate.Name | Sort-Object Version -Descending | Select-Object -First 1
@@ -439,7 +440,18 @@ function Import-ResolvedModule {
             Write-Log -Level 'INFO' -Message ('Selected module {0} {1} from {2}.' -f $candidate.Name,$candidate.Version,$candidate.ModuleBase)
             return $ResolutionItem
         }
-        catch { Write-Log -Level 'WARN' -Message "Module import attempt failed for '$($candidate.Name)' from '$($candidate.ModuleBase)'." -Data $_.Exception.Message }
+        catch {
+            $importError = $_.Exception.Message
+            # Az modules load their assemblies once per process. When a copy is
+            # already resident (for example after an earlier import in this same
+            # session), the re-import fails with an "assembly ... already loaded"
+            # error that cannot be recovered without starting a new session.
+            if ($importError -match 'already loaded') { $assemblyConflictDetected = $true }
+            Write-Log -Level 'WARN' -Message "Module import attempt failed for '$($candidate.Name)' from '$($candidate.ModuleBase)'." -Data $importError
+        }
+    }
+    if ($assemblyConflictDetected) {
+        throw "Module '$($ResolutionItem.Name)' cannot be loaded because a copy of its assemblies is already loaded in this PowerShell session. Az modules load their assemblies once per process and cannot be reloaded at a different version. Close this session and run the tool again from a new PowerShell session."
     }
     throw "Unable to import module '$($ResolutionItem.Name)' from any resolved source."
 }
@@ -938,7 +950,7 @@ function Get-ArmErrorDetails {
 }
 
 function Invoke-ArmRequestCore {
-    [CmdletBinding()] param([Parameter(Mandatory=$true)][string]$RequestMethod,[Parameter(Mandatory=$true)][pscustomobject]$RequestInfo,[AllowNull()][string]$Payload,[Parameter(Mandatory=$true)][hashtable]$ValidatedHeaders)
+    [CmdletBinding()] param([Parameter(Mandatory=$true)][string]$RequestMethod,[Parameter(Mandatory=$true)][pscustomobject]$RequestInfo,[AllowNull()][string]$Payload,[Parameter(Mandatory=$true)][hashtable]$ValidatedHeaders,[switch]$ReturnErrorResponse)
     Write-Log -Level 'INFO' -Message ("Invoking ARM request: {0} {1}" -f $RequestMethod,$RequestInfo.Uri.AbsoluteUri)
     if($ValidatedHeaders.Count -gt 0){ Write-Log -Level 'DEBUG' -Message 'Custom ARM headers were supplied.' -Data $ValidatedHeaders }
     if($Payload){ Write-Log -Level 'DEBUG' -Message 'ARM request payload prepared.' -Data $Payload }
@@ -968,7 +980,10 @@ function Invoke-ArmRequestCore {
         } catch { $response=Read-HttpErrorResponse -Exception $_.Exception -MethodName $RequestMethod -RequestUri $RequestInfo.Uri } finally { if($webHeaders.ContainsKey('Authorization')){ $webHeaders['Authorization']='[REDACTED]' } }
     }
     if($response.CorrelationId -or $response.RequestId){ Write-Log -Level 'INFO' -Message ('ARM response received. StatusCode={0}; CorrelationId={1}; RequestId={2}' -f $response.StatusCode,$response.CorrelationId,$response.RequestId) } else { Write-Log -Level 'INFO' -Message ('ARM response received. StatusCode={0}' -f $response.StatusCode) }
-    if(-not $response.IsSuccessStatus){ $errorDetails=Get-ArmErrorDetails -Response $response; $summary = if($errorDetails.Code){ '{0}: {1}' -f $errorDetails.Code,$errorDetails.Message } else { $response.Content }; throw "ARM request failed. StatusCode=$($response.StatusCode). $summary" }
+    # Callers such as the long-running operation poller pass -ReturnErrorResponse
+    # so they can inspect a non-success status (for example a transient 404 on an
+    # operation-status endpoint) instead of having this helper throw immediately.
+    if(-not $response.IsSuccessStatus){ if($ReturnErrorResponse){ return $response }; $errorDetails=Get-ArmErrorDetails -Response $response; $summary = if($errorDetails.Code){ '{0}: {1}' -f $errorDetails.Code,$errorDetails.Message } else { $response.Content }; throw "ARM request failed. StatusCode=$($response.StatusCode). $summary" }
     $response
 }
 
@@ -986,7 +1001,16 @@ function Wait-ArmLongRunningOperation {
         $retryAfterValue = Get-HeaderValue -Headers $latestResponse.Headers -Name 'Retry-After'; $delaySeconds = if($retryAfterValue -and ($retryAfterValue -as [int])){ [int]$retryAfterValue } else { $script:Configuration.DefaultPollIntervalSeconds }; if($delaySeconds -lt 1){$delaySeconds=$script:Configuration.DefaultPollIntervalSeconds}
         Write-Log -Level 'INFO' -Message ("Polling long-running ARM operation in {0} second(s)." -f $delaySeconds); Start-Sleep -Seconds $delaySeconds
         $pollRequestInfo=[pscustomobject]@{ Mode='Uri'; Uri=[System.Uri]$pollUri; Path=([System.Uri]$pollUri).PathAndQuery; ResourceManagerUrl=$InitialRequestInfo.ResourceManagerUrl }
-        $latestResponse=Get-LastPipelineValueSafe -Values @(Invoke-ArmRequestCore -RequestMethod 'GET' -RequestInfo $pollRequestInfo -Payload $null -ValidatedHeaders $ValidatedHeaders)
+        $latestResponse=Get-LastPipelineValueSafe -Values @(Invoke-ArmRequestCore -RequestMethod 'GET' -RequestInfo $pollRequestInfo -Payload $null -ValidatedHeaders $ValidatedHeaders -ReturnErrorResponse)
+        if(-not $latestResponse.IsSuccessStatus){
+            # ACS/Communication action endpoints (initiateVerification/cancelVerification)
+            # and DELETE frequently purge their transient operation-status record the
+            # moment the operation reaches a terminal state, so a follow-up poll can
+            # return 404 even though the operation itself succeeded. Treat a 404 for
+            # those methods as completion instead of surfacing a misleading failure.
+            if($latestResponse.StatusCode -eq 404 -and $InitialMethod -in @('POST','DELETE')){ Write-Log -Level 'WARN' -Message 'The long-running operation status endpoint returned 404 (Not Found). The operation record was likely purged after reaching a terminal state, so the request is treated as succeeded.'; return $InitialResponse }
+            $errorDetails=Get-ArmErrorDetails -Response $latestResponse; $summary = if($errorDetails.Code){ '{0}: {1}' -f $errorDetails.Code,$errorDetails.Message } else { $latestResponse.Content }; throw "Long-running ARM operation polling failed. StatusCode=$($latestResponse.StatusCode). $summary"
+        }
         $state=Get-LongRunningOperationState -Response $latestResponse; Write-Log -Level 'INFO' -Message ("Long-running ARM operation state: {0}" -f $state)
         switch -Regex ($state) {
             # Only PUT/PATCH leave behind a GET-able resource at the original URI,

@@ -10,15 +10,15 @@ versions, optionally signs tool-owned scripts, and generates Manifest\Versions.j
 Script Name: Build-BundledModules.ps1
 Description: Maintainer build script for bundled Az module packaging.
 Author: Blake Drumm (blakedrumm@microsoft.com)
-Version: 1.0.4
+Version: 1.0.5
 Created Date: 2026-04-03
-Last Updated Date: 2026-06-02
+Last Updated Date: 2026-07-14
 Requirements: Windows PowerShell 5.1 or PowerShell 7.x, internet access for maintainer builds, Save-PSResource preferred.
 Notes: Runtime downloads are intentionally disallowed in ArmClient-PS.ps1. This script is the controlled packaging path.
 #>
 [CmdletBinding()]
 param(
-    [Parameter()][ValidateNotNullOrEmpty()][string]$ToolVersion='1.0.4',
+    [Parameter()][ValidateNotNullOrEmpty()][string]$ToolVersion='1.0.5',
     [Parameter()][switch]$Clean,
     [Parameter()][string]$OutputRoot,
     [Parameter()][string]$ModulesPath,
@@ -45,7 +45,7 @@ $script:Configuration = [ordered]@{
     ToolScriptName            = 'ArmClient-PS.ps1'
     ToolName                  = 'ArmClient-PS'
     Author                    = 'Blake Drumm (blakedrumm@microsoft.com)'
-    Version                   = '1.0.4'
+    Version                   = '1.0.5'
     DefaultModulesFolderName  = 'Modules'
     DefaultManifestFolderName = 'Manifest'
     DefaultLogsFolderName     = 'Logs'
