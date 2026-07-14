@@ -12,7 +12,7 @@ Description: Maintainer build script for bundled Az module packaging.
 Author: Blake Drumm (blakedrumm@microsoft.com)
 Version: 1.0.5
 Created Date: 2026-04-03
-Last Updated Date: 2026-07-14
+Last Updated Date: 2026-07-07
 Requirements: Windows PowerShell 5.1 or PowerShell 7.x, internet access for maintainer builds, Save-PSResource preferred.
 Notes: Runtime downloads are intentionally disallowed in ArmClient-PS.ps1. This script is the controlled packaging path.
 #>
@@ -54,7 +54,7 @@ $script:Configuration = [ordered]@{
     FileHashAlgorithm         = 'SHA256'
     TextFileExtensions        = @('.ps1','.psm1','.psd1','.ps1xml','.json','.txt','.xml')
     RequiredModules           = @(
-        [pscustomobject]@{ Name='Az.Accounts'; Version='5.5.0'; Repository='PSGallery' }
+        [pscustomobject]@{ Name='Az.Accounts'; Version='5.5.1'; Repository='PSGallery' }
     )
 }
 

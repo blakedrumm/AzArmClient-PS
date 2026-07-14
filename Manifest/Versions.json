@@ -3,23 +3,23 @@
   "tool": {
     "name": "ArmClient-PS",
     "version": "1.0.5",
-    "builtUtc": "2026-07-14T21:42:15.4329762Z",
+    "builtUtc": "2026-07-14T22:46:32.9685235Z",
     "author": "Blake Drumm (blakedrumm@microsoft.com)"
   },
   "requiredModules": [
     {
       "name": "Az.Accounts",
-      "pinnedVersion": "5.5.0",
+      "pinnedVersion": "5.5.1",
       "repository": "PSGallery"
     }
   ],
   "modules": [
     {
       "name": "Az.Accounts",
-      "version": "5.5.0",
+      "version": "5.5.1",
       "source": "Pinned",
-      "manifestPath": "Modules\\Az.Accounts\\5.5.0\\Az.Accounts.psd1",
-      "moduleBase": "Modules\\Az.Accounts\\5.5.0",
+      "manifestPath": "Modules\\Az.Accounts\\5.5.1\\Az.Accounts.psd1",
+      "moduleBase": "Modules\\Az.Accounts\\5.5.1",
       "requiredModules": []
     }
   ]
