@@ -7,7 +7,8 @@
 #   1. Updates the pinned version in Build-BundledModules.ps1
 #   2. Bumps the tool patch version in ArmClient-PS.ps1 and Build-BundledModules.ps1
 #   3. Re-runs the build (regenerates Modules/, Versions.json, Files.sha256.json)
-#   4. Commits and pushes the changes directly to the default branch
+#   4. Commits and validates the exact archived package
+#   5. Pushes the validated update to the default branch
 # ───────────────────────────────────────────────────────────────────────────────
 
 name: Update Bundled Modules
@@ -61,7 +62,7 @@ jobs:
         run: |
           & '.github/scripts/Update-BundledModules.ps1' -Verbose
 
-      - name: Commit and push changes
+      - name: Create update commit
         if: steps.update.outputs.has_updates == 'true'
         shell: pwsh
         run: |
@@ -72,4 +73,26 @@ jobs:
           $summary = "${{ steps.update.outputs.commit_summary }}"
           $version = "${{ steps.update.outputs.new_tool_version }}"
           git commit -m "chore: update bundled modules ($summary) [v$version]"
+
+      - name: Validate committed package
+        if: steps.update.outputs.has_updates == 'true'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $validationRoot = Join-Path $env:RUNNER_TEMP 'ArmClient-PS-validation'
+          $archivePath = Join-Path $env:RUNNER_TEMP 'ArmClient-PS-validation.zip'
+
+          # Validate an archive of HEAD so Git attribute or line-ending changes
+          # made while committing cannot differ from the files being tested.
+          git archive --format=zip -o $archivePath HEAD
+          if ($LASTEXITCODE -ne 0) {
+              throw "Unable to archive commit HEAD for package validation."
+          }
+          Expand-Archive -LiteralPath $archivePath -DestinationPath $validationRoot
+          & (Join-Path $validationRoot 'ArmClient-PS.ps1') -SelfTest -PreferBundledModules
+
+      - name: Push validated update
+        if: steps.update.outputs.has_updates == 'true'
+        shell: pwsh
+        run: |
           git push

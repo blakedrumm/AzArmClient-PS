@@ -465,6 +465,7 @@ function Test-TenantIdentifier { [CmdletBinding()] param([string]$Value) if([str
 function Test-SubscriptionIdentifier { [CmdletBinding()] param([string]$Value) if([string]::IsNullOrWhiteSpace($Value)){return $true}; ($Value -match '^[0-9a-fA-F-]{36}$') }
 function Test-SubscriptionErrorMessage { [CmdletBinding()] param([Parameter(Mandatory=$true)][string]$Message) ($Message -like '*does not have access to subscription*') -or ($Message -like '*could not be found*' -and $Message -like '*subscription*') }
 function Test-TenantErrorMessage { [CmdletBinding()] param([Parameter(Mandatory=$true)][string]$Message) ($Message -like '*Unable to acquire token for tenant*') -or ($Message -like '*User interaction is required*' -and $Message -like '*tenant*') -or ($Message -like '*multiple tenants*') -or ($Message -like '*AADSTS50076*') -or ($Message -like '*tenant*' -and $Message -like '*MFA*') }
+function Test-InteractiveBrowserAuthenticationError { [CmdletBinding()] param([Parameter(Mandatory=$true)][string]$Message) ($Message -like '*InteractiveBrowserCredential*authentication failed*') -or ($Message -like '*browser is not supported in this session*') }
 
 function Get-CurrentAzContextSafe {
     [CmdletBinding()] param()
@@ -575,6 +576,7 @@ function Select-AzSubscriptionInteractive {
 function Connect-ArmClientPs {
     [CmdletBinding()] param()
     $requestedSubscriptionId = Get-RequestedSubscriptionIdSafe
+    $useDeviceAuthentication = [bool]$UseDeviceCode
     if (-not (Test-TenantIdentifier -Value $TenantId)) { throw "TenantId '$TenantId' is not a valid GUID or verified domain name." }
     if (-not (Test-SubscriptionIdentifier -Value $requestedSubscriptionId)) { throw "SubscriptionId '$requestedSubscriptionId' is not a valid GUID." }
     $environmentObject = Get-AzEnvironmentSafe -Name $script:SessionState.SelectedEnvironment
@@ -596,9 +598,19 @@ function Connect-ArmClientPs {
     $connectParams = @{ Environment=$environmentObject.Name; Scope='Process'; ErrorAction='Stop'; SkipContextPopulation=$true; MaxContextPopulation=1 }
     if ($TenantId) { $connectParams['Tenant'] = $TenantId }
     if ($requestedSubscriptionId) { $connectParams['Subscription'] = $requestedSubscriptionId }
-    if ($UseManagedIdentity) { $connectParams['Identity'] = $true } elseif ($UseDeviceCode) { $connectParams['UseDeviceAuthentication'] = $true }
+    if ($UseManagedIdentity) { $connectParams['Identity'] = $true } elseif ($useDeviceAuthentication) { $connectParams['UseDeviceAuthentication'] = $true }
     try {
-        $null = Connect-AzAccount @connectParams
+        try {
+            $null = Connect-AzAccount @connectParams
+        }
+        catch {
+            $interactiveBrowserError = $_.Exception.Message
+            if ($UseManagedIdentity -or $useDeviceAuthentication -or -not (Test-InteractiveBrowserAuthenticationError -Message $interactiveBrowserError)) { throw }
+            $useDeviceAuthentication = $true
+            $connectParams['UseDeviceAuthentication'] = $true
+            Write-Log -Level 'WARN' -Message 'Interactive browser sign-in is unavailable in this session. Retrying with device-code authentication. Follow the Microsoft sign-in URL and enter the code shown next; do not share the code.'
+            $null = Connect-AzAccount @connectParams
+        }
     }
     catch {
         $errMsg = $_.Exception.Message
@@ -610,12 +622,12 @@ function Connect-ArmClientPs {
             # account's available tenants are known to the current session.
             Write-Log -Level 'WARN' -Message 'Tenant could not be resolved automatically. Attempting to authenticate and list available tenants.'
             $tenantFallbackParams = @{ Environment=$environmentObject.Name; Scope='Process'; ErrorAction='Stop' }
-            if ($UseManagedIdentity) { $tenantFallbackParams['Identity'] = $true } elseif ($UseDeviceCode) { $tenantFallbackParams['UseDeviceAuthentication'] = $true }
+            if ($UseManagedIdentity) { $tenantFallbackParams['Identity'] = $true } elseif ($useDeviceAuthentication) { $tenantFallbackParams['UseDeviceAuthentication'] = $true }
             $null = Connect-AzAccount @tenantFallbackParams
             $selectedTenantId = Select-AzTenantInteractive
             $tenantReconnectParams = @{ Environment=$environmentObject.Name; Scope='Process'; ErrorAction='Stop'; Tenant=$selectedTenantId }
             if ($requestedSubscriptionId) { $tenantReconnectParams['Subscription'] = $requestedSubscriptionId }
-            if ($UseManagedIdentity) { $tenantReconnectParams['Identity'] = $true } elseif ($UseDeviceCode) { $tenantReconnectParams['UseDeviceAuthentication'] = $true }
+            if ($UseManagedIdentity) { $tenantReconnectParams['Identity'] = $true } elseif ($useDeviceAuthentication) { $tenantReconnectParams['UseDeviceAuthentication'] = $true }
             try {
                 $null = Connect-AzAccount @tenantReconnectParams
             }
@@ -624,7 +636,7 @@ function Connect-ArmClientPs {
                 $isSubErrorAfterTenant = Test-SubscriptionErrorMessage -Message $reconnectErr
                 if (-not $isSubErrorAfterTenant) { throw }
                 $subFallback = @{ Environment=$environmentObject.Name; Scope='Process'; ErrorAction='Stop'; Tenant=$selectedTenantId }
-                if ($UseManagedIdentity) { $subFallback['Identity'] = $true } elseif ($UseDeviceCode) { $subFallback['UseDeviceAuthentication'] = $true }
+                if ($UseManagedIdentity) { $subFallback['Identity'] = $true } elseif ($useDeviceAuthentication) { $subFallback['UseDeviceAuthentication'] = $true }
                 $null = Connect-AzAccount @subFallback
                 $selectedSubId = Select-AzSubscriptionInteractive
                 Set-TargetSubscription -TargetSubscriptionId $selectedSubId
@@ -636,7 +648,7 @@ function Connect-ArmClientPs {
             Write-Log -Level 'WARN' -Message 'Subscription could not be resolved. Attempting to authenticate without a specific subscription and list available subscriptions.'
             $fallbackParams = @{ Environment=$environmentObject.Name; Scope='Process'; ErrorAction='Stop' }
             if ($TenantId) { $fallbackParams['Tenant'] = $TenantId }
-            if ($UseManagedIdentity) { $fallbackParams['Identity'] = $true } elseif ($UseDeviceCode) { $fallbackParams['UseDeviceAuthentication'] = $true }
+            if ($UseManagedIdentity) { $fallbackParams['Identity'] = $true } elseif ($useDeviceAuthentication) { $fallbackParams['UseDeviceAuthentication'] = $true }
             $null = Connect-AzAccount @fallbackParams
             $selectedSubId = Select-AzSubscriptionInteractive
             Set-TargetSubscription -TargetSubscriptionId $selectedSubId
