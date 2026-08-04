@@ -609,6 +609,9 @@ function Connect-ArmClientPs {
             $useDeviceAuthentication = $true
             $connectParams['UseDeviceAuthentication'] = $true
             Write-Log -Level 'WARN' -Message 'Interactive browser sign-in is unavailable in this session. Retrying with device-code authentication. Follow the Microsoft sign-in URL and enter the code shown next; do not share the code.'
+            if (-not $TenantId -or -not $requestedSubscriptionId) {
+                Write-Log -Level 'WARN' -Message "For customer sessions, rerun with -TenantId '<customer-tenant-id>' and -SubscriptionId '<subscription-id>' to ensure the intended customer tenant and subscription are selected."
+            }
             $null = Connect-AzAccount @connectParams
         }
     }
