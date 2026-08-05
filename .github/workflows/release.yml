@@ -224,9 +224,9 @@ jobs:
           $isPrerelease = [Convert]::ToBoolean($env:PRERELEASE)
           $releaseTitle = "AzArmClient-PS v$env:RELEASE_VERSION"
 
-          $tagCommit = [string](& git rev-list -n 1 $env:RELEASE_TAG 2>$null)
-          $tagLookupSucceeded = $LASTEXITCODE -eq 0
-          $tagCommit = $tagCommit.Trim()
+          $tagCommitOutput = @(& git rev-list -n 1 $env:RELEASE_TAG 2>$null)
+          $tagLookupSucceeded = $LASTEXITCODE -eq 0 -and $tagCommitOutput.Count -gt 0
+          $tagCommit = if ($tagLookupSucceeded) { ([string]$tagCommitOutput[0]).Trim() } else { '' }
           if ($tagLookupSucceeded -and $tagCommit -and $tagCommit -ne $env:RELEASE_COMMIT) {
               throw "Tag '$env:RELEASE_TAG' already points to '$tagCommit', not release commit '$env:RELEASE_COMMIT'. Bump the tool version before publishing this commit."
           }
