@@ -225,3 +225,32 @@ Before distributing the package:
 2. Confirm `Manifest\Files.sha256.json` and `Manifest\Versions.json` were regenerated.
 3. Run `ArmClient-PS.ps1 -SelfTest` from the packaged folder.
 4. Zip the entire folder structure without removing the `Modules` or `Manifest` folders.
+
+## Release Automation
+
+The `Release Package` GitHub Actions workflow creates `AzArmClient-PS.zip` from an exact repository commit. The archive contains the runtime scripts, license, README, manifests, and bundled modules under one `AzArmClient-PS` folder. Before publishing, the workflow extracts the archive and runs its built-in self-test.
+
+The workflow then:
+
+1. Creates or updates the `v<version>` GitHub release and its `AzArmClient-PS.zip` asset.
+2. Formats the supplied additions under `# Change Log` and `## Additions`.
+3. Adds a version-specific download-count badge to the release notes.
+4. Optionally uploads the same archive to SFTP as `AzArmClient-PS.zip`.
+
+Run it manually from **Actions > Release Package > Run workflow**. Leave the version blank to read it from the `Version` setting in `ArmClient-PS.ps1`, or supply a version with or without the leading `v` to override the release tag, title, and notes. An override does not rewrite the committed package files. Enter release additions one item per line. Set **Upload SFTP** to `false` until the SFTP secrets are configured. A version tag cannot be reused for a different commit, so bump the tool version before publishing another release. Automated bundled-module updates invoke the same workflow after their rebuilt commit passes package validation and is pushed.
+
+### SFTP Configuration
+
+SFTP publishing uses an OpenSSH private key and strict host-key checking. Add these under **Settings > Secrets and variables > Actions**:
+
+| Type | Name | Value |
+| --- | --- | --- |
+| Variable | `SFTP_ENABLED` | `true` to upload automatic module-update releases; otherwise `false` or unset |
+| Secret | `SFTP_HOST` | SFTP server host name |
+| Secret | `SFTP_PORT` | Optional port; defaults to `22` |
+| Secret | `SFTP_USERNAME` | Restricted SFTP deployment account |
+| Secret | `SFTP_PRIVATE_KEY` | Unencrypted private key for unattended key authentication |
+| Secret | `SFTP_KNOWN_HOSTS` | Verified OpenSSH `known_hosts` entry for the server and port |
+| Secret | `SFTP_REMOTE_DIRECTORY` | Optional existing remote directory; blank uploads to the account's SFTP home |
+
+Install the matching public key on a restricted SFTP account with write access only to the release directory. Obtain the server's `known_hosts` entry with `ssh-keyscan`, but verify its fingerprint with the server administrator before saving it as a secret. Never commit the private key to the repository.

@@ -9,6 +9,7 @@
 #   3. Re-runs the build (regenerates Modules/, Versions.json, Files.sha256.json)
 #   4. Commits and validates the exact archived package
 #   5. Pushes the validated update to the default branch
+#   6. Publishes the GitHub release and optionally uploads it to SFTP
 # ───────────────────────────────────────────────────────────────────────────────
 
 name: Update Bundled Modules
@@ -26,6 +27,11 @@ jobs:
   check-and-update:
     name: Check for module updates
     runs-on: windows-latest   # Windows required for Save-Module / Save-PSResource compatibility
+    outputs:
+      has_updates: ${{ steps.update.outputs.has_updates }}
+      commit_summary: ${{ steps.update.outputs.commit_summary }}
+      new_tool_version: ${{ steps.update.outputs.new_tool_version }}
+      release_ref: ${{ steps.commit.outputs.release_ref }}
     steps:
 
       - name: Checkout repository
@@ -63,6 +69,7 @@ jobs:
           & '.github/scripts/Update-BundledModules.ps1' -Verbose
 
       - name: Create update commit
+        id: commit
         if: steps.update.outputs.has_updates == 'true'
         shell: pwsh
         run: |
@@ -73,6 +80,7 @@ jobs:
           $summary = "${{ steps.update.outputs.commit_summary }}"
           $version = "${{ steps.update.outputs.new_tool_version }}"
           git commit -m "chore: update bundled modules ($summary) [v$version]"
+          "release_ref=$(git rev-parse HEAD)" >> $env:GITHUB_OUTPUT
 
       - name: Validate committed package
         if: steps.update.outputs.has_updates == 'true'
@@ -96,3 +104,16 @@ jobs:
         shell: pwsh
         run: |
           git push
+
+  release-update:
+    name: Release updated bundle
+    needs: check-and-update
+    if: needs.check-and-update.outputs.has_updates == 'true'
+    uses: ./.github/workflows/release.yml
+    with:
+      ref: ${{ needs.check-and-update.outputs.release_ref }}
+      version: ${{ needs.check-and-update.outputs.new_tool_version }}
+      additions: "Updated bundled modules: ${{ needs.check-and-update.outputs.commit_summary }}."
+      upload_sftp: ${{ vars.SFTP_ENABLED == 'true' }}
+      prerelease: false
+    secrets: inherit

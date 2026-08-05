@@ -1,0 +1,340 @@
+name: Release Package
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Commit, branch, or tag to package
+        required: true
+        default: main
+        type: string
+      version:
+        description: Release version override; blank reads ArmClient-PS.ps1 (leading v optional)
+        required: false
+        type: string
+      additions:
+        description: Release additions, one item per line; bullet prefixes are optional
+        required: false
+        type: string
+      upload_sftp:
+        description: Upload AzArmClient-PS.zip to the configured SFTP server
+        required: true
+        default: true
+        type: boolean
+      prerelease:
+        description: Mark the GitHub release as a prerelease
+        required: true
+        default: false
+        type: boolean
+  workflow_call:
+    inputs:
+      ref:
+        description: Exact commit, branch, or tag to package
+        required: true
+        type: string
+      version:
+        description: Release version override; blank reads ArmClient-PS.ps1 (leading v optional)
+        required: false
+        type: string
+      additions:
+        description: Release additions, one item per line
+        required: false
+        type: string
+      upload_sftp:
+        description: Upload AzArmClient-PS.zip to SFTP
+        required: false
+        default: false
+        type: boolean
+      prerelease:
+        description: Mark the GitHub release as a prerelease
+        required: false
+        default: false
+        type: boolean
+    secrets:
+      SFTP_HOST:
+        required: false
+      SFTP_PORT:
+        required: false
+      SFTP_USERNAME:
+        required: false
+      SFTP_PRIVATE_KEY:
+        required: false
+      SFTP_KNOWN_HOSTS:
+        required: false
+      SFTP_REMOTE_DIRECTORY:
+        required: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: AzArmClient-PS-release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Build and publish release
+    runs-on: windows-latest
+    steps:
+      - name: Checkout release source
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ inputs.ref }}
+
+      - name: Prepare release metadata
+        id: metadata
+        shell: pwsh
+        env:
+          REQUESTED_VERSION: ${{ inputs.version }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $scriptContent = Get-Content -LiteralPath 'ArmClient-PS.ps1' -Raw
+          $configurationMarker = '$script:Configuration = [ordered]@{'
+          $configurationStart = $scriptContent.IndexOf($configurationMarker, [StringComparison]::Ordinal)
+          if ($configurationStart -lt 0) {
+            throw 'Unable to find the configuration block in ArmClient-PS.ps1.'
+          }
+          $scriptVersionMatch = [regex]::Match(
+            $scriptContent.Substring($configurationStart),
+            "(?m)^\s*Version\s*=\s*'(?<Version>[^']+)'"
+          )
+          if (-not $scriptVersionMatch.Success) {
+            throw 'Unable to read the tool version from ArmClient-PS.ps1.'
+          }
+          $scriptVersion = $scriptVersionMatch.Groups['Version'].Value
+
+          $versionsManifest = Get-Content -LiteralPath 'Manifest/Versions.json' -Raw | ConvertFrom-Json
+          $manifestVersion = [string]$versionsManifest.tool.version
+          $versionPattern = '^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$'
+          if ($scriptVersion -notmatch $versionPattern) {
+            throw "Script version '$scriptVersion' is not a supported semantic version."
+          }
+          if ($manifestVersion -ne $scriptVersion) {
+            throw "Manifest version '$manifestVersion' does not match script version '$scriptVersion'. Rebuild the package before releasing it."
+          }
+
+          $requestedVersion = ([string]$env:REQUESTED_VERSION).Trim()
+          if ($requestedVersion -match '^[vV](?=\d)') {
+            $requestedVersion = $requestedVersion.Substring(1)
+          }
+          $releaseVersion = if ($requestedVersion) { $requestedVersion } else { $scriptVersion }
+          if ($releaseVersion -notmatch $versionPattern) {
+            throw "Release version '$releaseVersion' is not a supported semantic version."
+          }
+          $versionSource = if ($requestedVersion) { 'workflow input' } else { 'ArmClient-PS.ps1' }
+          if ($requestedVersion -and $releaseVersion -ne $scriptVersion) {
+            Write-Warning "Release version '$releaseVersion' overrides package version '$scriptVersion'. The committed package files will not be rewritten."
+          }
+
+          $releaseCommit = (git rev-parse HEAD).Trim()
+          if ($LASTEXITCODE -ne 0 -or -not $releaseCommit) {
+              throw 'Unable to resolve the checked-out release commit.'
+          }
+
+          "version=$releaseVersion" >> $env:GITHUB_OUTPUT
+          "tag=v$releaseVersion" >> $env:GITHUB_OUTPUT
+          "commit=$releaseCommit" >> $env:GITHUB_OUTPUT
+          "version_source=$versionSource" >> $env:GITHUB_OUTPUT
+
+          @"
+          ## Release metadata
+
+          - Release version: ``$releaseVersion``
+          - Version source: $versionSource
+          - Package version: ``$scriptVersion``
+          - Tag: ``v$releaseVersion``
+          - Commit: ``$releaseCommit``
+          "@ >> $env:GITHUB_STEP_SUMMARY
+
+      - name: Create release archive
+        id: package
+        shell: pwsh
+        env:
+          RELEASE_COMMIT: ${{ steps.metadata.outputs.commit }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $releaseRoot = Join-Path $env:RUNNER_TEMP 'AzArmClient-PS-release'
+          $archivePath = Join-Path $releaseRoot 'AzArmClient-PS.zip'
+          $validationRoot = Join-Path $releaseRoot 'validation'
+          if (Test-Path -LiteralPath $releaseRoot) {
+              Remove-Item -LiteralPath $releaseRoot -Recurse -Force
+          }
+          $null = New-Item -Path $releaseRoot -ItemType Directory -Force
+
+          # Archive only the files customers need, preserving the exact bytes
+          # from the selected commit and placing them under one package folder.
+          $archiveArgument = "--output=$archivePath"
+          git archive --format=zip --prefix=AzArmClient-PS/ $archiveArgument $env:RELEASE_COMMIT -- `
+              ArmClient-PS.ps1 Build-BundledModules.ps1 LICENSE README.md Manifest Modules
+          if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $archivePath -PathType Leaf)) {
+              throw 'Unable to create AzArmClient-PS.zip from the selected commit.'
+          }
+
+          Expand-Archive -LiteralPath $archivePath -DestinationPath $validationRoot
+          $packagedScript = Join-Path $validationRoot 'AzArmClient-PS/ArmClient-PS.ps1'
+          & $packagedScript -SelfTest -PreferBundledModules
+          if (-not $?) { throw 'The extracted release package failed its self-test.' }
+          $global:LASTEXITCODE = 0
+
+          "archive_path=$archivePath" >> $env:GITHUB_OUTPUT
+
+      - name: Generate release notes
+        id: notes
+        shell: pwsh
+        env:
+          RELEASE_VERSION: ${{ steps.metadata.outputs.version }}
+          RELEASE_ADDITIONS: ${{ inputs.additions }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $notesPath = Join-Path $env:RUNNER_TEMP 'AzArmClient-PS-release-notes.md'
+          & '.github/scripts/New-ReleaseNotes.ps1' `
+              -Version $env:RELEASE_VERSION `
+              -Repository $env:GITHUB_REPOSITORY `
+              -Additions $env:RELEASE_ADDITIONS `
+              -AssetName 'AzArmClient-PS.zip' `
+              -OutputPath $notesPath | Out-Null
+          "notes_path=$notesPath" >> $env:GITHUB_OUTPUT
+
+      - name: Retain release archive as workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: AzArmClient-PS-v${{ steps.metadata.outputs.version }}
+          path: ${{ steps.package.outputs.archive_path }}
+          if-no-files-found: error
+
+      - name: Publish GitHub release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ steps.metadata.outputs.tag }}
+          RELEASE_VERSION: ${{ steps.metadata.outputs.version }}
+          RELEASE_COMMIT: ${{ steps.metadata.outputs.commit }}
+          ARCHIVE_PATH: ${{ steps.package.outputs.archive_path }}
+          NOTES_PATH: ${{ steps.notes.outputs.notes_path }}
+          PRERELEASE: ${{ inputs.prerelease }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if (-not (Get-Command -Name gh -ErrorAction SilentlyContinue)) {
+              throw 'GitHub CLI is not available on the release runner.'
+          }
+
+          $null = & gh release view $env:RELEASE_TAG --repo $env:GITHUB_REPOSITORY 2>$null
+          $releaseExists = $LASTEXITCODE -eq 0
+          $isPrerelease = [Convert]::ToBoolean($env:PRERELEASE)
+          $releaseTitle = "AzArmClient-PS v$env:RELEASE_VERSION"
+
+          $tagCommit = [string](& git rev-list -n 1 $env:RELEASE_TAG 2>$null)
+          $tagLookupSucceeded = $LASTEXITCODE -eq 0
+          $tagCommit = $tagCommit.Trim()
+          if ($tagLookupSucceeded -and $tagCommit -and $tagCommit -ne $env:RELEASE_COMMIT) {
+              throw "Tag '$env:RELEASE_TAG' already points to '$tagCommit', not release commit '$env:RELEASE_COMMIT'. Bump the tool version before publishing this commit."
+          }
+
+          if ($releaseExists) {
+              & gh release upload $env:RELEASE_TAG $env:ARCHIVE_PATH --clobber --repo $env:GITHUB_REPOSITORY
+              if ($LASTEXITCODE -ne 0) { throw "Unable to replace the asset on release '$env:RELEASE_TAG'." }
+
+              $editArguments = @(
+                  'release', 'edit', $env:RELEASE_TAG,
+                  '--repo', $env:GITHUB_REPOSITORY,
+                  '--title', $releaseTitle,
+                  '--notes-file', $env:NOTES_PATH,
+                  "--prerelease=$($isPrerelease.ToString().ToLowerInvariant())"
+              )
+              & gh @editArguments
+              if ($LASTEXITCODE -ne 0) { throw "Unable to update release '$env:RELEASE_TAG'." }
+          }
+          else {
+              $createArguments = @(
+                  'release', 'create', $env:RELEASE_TAG, $env:ARCHIVE_PATH,
+                  '--repo', $env:GITHUB_REPOSITORY,
+                  '--target', $env:RELEASE_COMMIT,
+                  '--title', $releaseTitle,
+                  '--notes-file', $env:NOTES_PATH
+              )
+              if ($isPrerelease) { $createArguments += '--prerelease' }
+              else { $createArguments += '--latest' }
+              & gh @createArguments
+              if ($LASTEXITCODE -ne 0) { throw "Unable to create release '$env:RELEASE_TAG'." }
+          }
+
+      - name: Upload release archive to SFTP
+        if: inputs.upload_sftp
+        shell: pwsh
+        env:
+          ARCHIVE_PATH: ${{ steps.package.outputs.archive_path }}
+          SFTP_HOST: ${{ secrets.SFTP_HOST }}
+          SFTP_PORT: ${{ secrets.SFTP_PORT }}
+          SFTP_USERNAME: ${{ secrets.SFTP_USERNAME }}
+          SFTP_PRIVATE_KEY: ${{ secrets.SFTP_PRIVATE_KEY }}
+          SFTP_KNOWN_HOSTS: ${{ secrets.SFTP_KNOWN_HOSTS }}
+          SFTP_REMOTE_DIRECTORY: ${{ secrets.SFTP_REMOTE_DIRECTORY }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $requiredSecrets = [ordered]@{
+              SFTP_HOST             = $env:SFTP_HOST
+              SFTP_USERNAME         = $env:SFTP_USERNAME
+              SFTP_PRIVATE_KEY      = $env:SFTP_PRIVATE_KEY
+              SFTP_KNOWN_HOSTS      = $env:SFTP_KNOWN_HOSTS
+          }
+          $missingSecrets = @($requiredSecrets.Keys | Where-Object { [string]::IsNullOrWhiteSpace($requiredSecrets[$_]) })
+          if ($missingSecrets.Count -gt 0) {
+              throw "SFTP upload was requested, but these repository secrets are missing: $($missingSecrets -join ', ')."
+          }
+
+          $sftpPort = 22
+          if ($env:SFTP_PORT -and (-not [int]::TryParse($env:SFTP_PORT, [ref]$sftpPort) -or $sftpPort -lt 1 -or $sftpPort -gt 65535)) {
+              throw 'SFTP_PORT must be a number from 1 through 65535.'
+          }
+          if ($env:SFTP_REMOTE_DIRECTORY -match '["\r\n]') {
+              throw 'SFTP_REMOTE_DIRECTORY cannot contain quotes or line breaks.'
+          }
+
+          $sftpCommand = Get-Command -Name sftp.exe -ErrorAction SilentlyContinue
+          if (-not $sftpCommand) { throw 'OpenSSH sftp.exe is not available on the release runner.' }
+
+          $sftpRoot = Join-Path $env:RUNNER_TEMP 'AzArmClient-PS-sftp'
+          $keyPath = Join-Path $sftpRoot 'deploy_key'
+          $knownHostsPath = Join-Path $sftpRoot 'known_hosts'
+          $batchPath = Join-Path $sftpRoot 'upload.batch'
+          $null = New-Item -Path $sftpRoot -ItemType Directory -Force
+
+          try {
+              $utf8NoBom = [Text.UTF8Encoding]::new($false)
+              [IO.File]::WriteAllText($keyPath, ($env:SFTP_PRIVATE_KEY -replace "`r`n", "`n").TrimEnd() + "`n", $utf8NoBom)
+              [IO.File]::WriteAllText($knownHostsPath, ($env:SFTP_KNOWN_HOSTS -replace "`r`n", "`n").TrimEnd() + "`n", $utf8NoBom)
+
+              $currentUser = [Security.Principal.WindowsIdentity]::GetCurrent().Name
+              $null = & icacls.exe $keyPath '/inheritance:r' '/grant:r' "$currentUser`:(R)"
+              if ($LASTEXITCODE -ne 0) { throw 'Unable to restrict access to the temporary SFTP private key.' }
+
+                $remoteDirectory = $env:SFTP_REMOTE_DIRECTORY.Trim()
+                $remoteFile = if ([string]::IsNullOrWhiteSpace($remoteDirectory)) {
+                  'AzArmClient-PS.zip'
+                }
+                elseif ($remoteDirectory -eq '/') {
+                  '/AzArmClient-PS.zip'
+                }
+                else {
+                  "$($remoteDirectory.TrimEnd('/'))/AzArmClient-PS.zip"
+                }
+              $localFile = $env:ARCHIVE_PATH.Replace('\', '/')
+              [IO.File]::WriteAllText($batchPath, "put `"$localFile`" `"$remoteFile`"`n", $utf8NoBom)
+
+              $sftpArguments = @(
+                  '-b', $batchPath,
+                  '-i', $keyPath,
+                  '-o', "UserKnownHostsFile=$knownHostsPath",
+                  '-o', 'StrictHostKeyChecking=yes',
+                  '-o', 'BatchMode=yes',
+                  '-o', 'IdentitiesOnly=yes',
+                  '-P', [string]$sftpPort,
+                  "$env:SFTP_USERNAME@$env:SFTP_HOST"
+              )
+              & $sftpCommand.Source @sftpArguments
+              if ($LASTEXITCODE -ne 0) { throw 'SFTP upload failed.' }
+          }
+          finally {
+              Remove-Item -LiteralPath $sftpRoot -Recurse -Force -ErrorAction SilentlyContinue
+          }
