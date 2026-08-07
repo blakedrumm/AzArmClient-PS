@@ -10,15 +10,15 @@ versions, optionally signs tool-owned scripts, and generates Manifest\Versions.j
 Script Name: Build-BundledModules.ps1
 Description: Maintainer build script for bundled Az module packaging.
 Author: Blake Drumm (blakedrumm@microsoft.com)
-Version: 1.0.6
+Version: 1.0.7
 Created Date: 2026-04-03
-Last Updated Date: 2026-08-04
+Last Updated Date: 2026-08-07
 Requirements: Windows PowerShell 5.1 or PowerShell 7.x, internet access for maintainer builds, Save-PSResource preferred.
 Notes: Runtime downloads are intentionally disallowed in ArmClient-PS.ps1. This script is the controlled packaging path.
 #>
 [CmdletBinding()]
 param(
-    [Parameter()][ValidateNotNullOrEmpty()][string]$ToolVersion='1.0.6',
+    [Parameter()][ValidateNotNullOrEmpty()][string]$ToolVersion='1.0.7',
     [Parameter()][switch]$Clean,
     [Parameter()][string]$OutputRoot,
     [Parameter()][string]$ModulesPath,
@@ -45,7 +45,7 @@ $script:Configuration = [ordered]@{
     ToolScriptName            = 'ArmClient-PS.ps1'
     ToolName                  = 'ArmClient-PS'
     Author                    = 'Blake Drumm (blakedrumm@microsoft.com)'
-    Version                   = '1.0.6'
+    Version                   = '1.0.7'
     DefaultModulesFolderName  = 'Modules'
     DefaultManifestFolderName = 'Manifest'
     DefaultLogsFolderName     = 'Logs'
@@ -73,13 +73,13 @@ function Get-RelativePathFromBase {
     )
     $resolvedBase = [IO.Path]::GetFullPath($BasePath).TrimEnd('\','/')
     $resolvedFull = [IO.Path]::GetFullPath($FullPath)
-    if (-not $resolvedFull.StartsWith($resolvedBase, [StringComparison]::OrdinalIgnoreCase)) {
+    if (-not $resolvedFull.StartsWith($resolvedBase + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase)) {
         throw "Path '$FullPath' is not under base '$BasePath'."
     }
     $resolvedFull.Substring($resolvedBase.Length).TrimStart('\', '/')
 }
 function Write-Log { [CmdletBinding()] param([Parameter(Mandatory=$true)][ValidateSet('INFO','WARN','ERROR','DEBUG')][string]$Level,[Parameter(Mandatory=$true)][string]$Message,[AllowNull()][object]$Data) if($Level -eq 'DEBUG' -and -not $DebugLogging){return}; $line='{0} [{1}] {2}' -f (Get-Date).ToString('yyyy-MM-ddTHH:mm:ss.fffK'),$Level,$Message; if($PSBoundParameters.ContainsKey('Data') -and $null -ne $Data){ try { $line='{0} | {1}' -f $line, ($Data | ConvertTo-Json -Depth 50 -Compress) } catch { $line='{0} | {1}' -f $line, (($Data | Out-String).Trim()) } }; if($script:BuildState.LogFilePath){ Add-Content -LiteralPath $script:BuildState.LogFilePath -Value $line -Encoding UTF8 }; Write-Output $line }
-function Assert-PathUnderRoot { [CmdletBinding()] param([Parameter(Mandatory=$true)][string]$Path,[Parameter(Mandatory=$true)][string]$Root) $resolvedPath=Get-SafeFullPath -Path $Path; $resolvedRoot=Get-SafeFullPath -Path $Root; if(-not $resolvedPath.StartsWith($resolvedRoot,[StringComparison]::OrdinalIgnoreCase)){ throw "Path '$resolvedPath' is outside of allowed root '$resolvedRoot'." } }
+function Assert-PathUnderRoot { [CmdletBinding()] param([Parameter(Mandatory=$true)][string]$Path,[Parameter(Mandatory=$true)][string]$Root) $resolvedPath=(Get-SafeFullPath -Path $Path).TrimEnd('\','/'); $resolvedRoot=(Get-SafeFullPath -Path $Root).TrimEnd('\','/'); if($resolvedPath -ne $resolvedRoot -and -not $resolvedPath.StartsWith($resolvedRoot + [IO.Path]::DirectorySeparatorChar,[StringComparison]::OrdinalIgnoreCase)){ throw "Path '$resolvedPath' is outside of allowed root '$resolvedRoot'." } }
 
 function Remove-GeneratedFileSafe {
     [CmdletBinding()]
@@ -279,14 +279,16 @@ function Get-NormalizedFileHash {
     if ($script:Configuration.TextFileExtensions -contains $ext) {
         # Match runtime hashing behavior exactly so the generated manifest can be
         # verified later by ArmClient-PS.ps1 on any supported platform.
+        # Compacting in place avoids a per-byte List[byte] copy that dominated build time.
         $bytes = [IO.File]::ReadAllBytes($LiteralPath)
-        $normalized = [Collections.Generic.List[byte]]::new($bytes.Length)
+        $writeIndex = 0
         for ($i = 0; $i -lt $bytes.Length; $i++) {
             if ($bytes[$i] -eq 0x0D -and ($i + 1) -lt $bytes.Length -and $bytes[$i + 1] -eq 0x0A) { continue }
-            $normalized.Add($bytes[$i])
+            $bytes[$writeIndex] = $bytes[$i]; $writeIndex++
         }
         $hashImpl = [Security.Cryptography.HashAlgorithm]::Create($Algorithm)
-        try { $hashBytes = $hashImpl.ComputeHash($normalized.ToArray()) } finally { $hashImpl.Dispose() }
+        if ($null -eq $hashImpl) { throw "Hash algorithm '$Algorithm' is not available on this platform." }
+        try { $hashBytes = $hashImpl.ComputeHash($bytes,0,$writeIndex) } finally { $hashImpl.Dispose() }
         return ([BitConverter]::ToString($hashBytes).Replace('-','')).ToUpperInvariant()
     }
     (Get-FileHash -LiteralPath $LiteralPath -Algorithm $Algorithm).Hash.ToUpperInvariant()

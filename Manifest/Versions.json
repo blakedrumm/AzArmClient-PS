@@ -2,8 +2,8 @@
   "schemaVersion": "1.0",
   "tool": {
     "name": "ArmClient-PS",
-    "version": "1.0.6",
-    "builtUtc": "2026-08-04T08:46:49.3096797Z",
+    "version": "1.0.7",
+    "builtUtc": "2026-08-07T21:31:49.0782043Z",
     "author": "Blake Drumm (blakedrumm@microsoft.com)"
   },
   "requiredModules": [

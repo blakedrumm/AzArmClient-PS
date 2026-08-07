@@ -203,10 +203,20 @@ Optional signing flow:
 ## Security Notes
 
 - Runtime execution disables Az context autosave for the current process.
-- Runtime hash validation is enabled by default.
+- Runtime hash validation is enabled by default. Every packaged file under `Modules\` must be listed in
+  `Manifest\Files.sha256.json`; an added file that is not in the manifest fails the run, because Az modules
+  dot-source everything in their `StartupScripts` and `PostImportScripts` folders.
+- Manifest paths must stay inside the package folder. Rooted paths and `..` traversal are rejected.
 - Signature validation is available through `-EnforceSignatureValidation`.
-- Tokens and authorization headers are redacted from log output.
+- Tokens and authorization headers are redacted from log output, including bare JWTs, SAS `sig` values, and PEM private keys.
+- Long-running operation polling targets are taken from response headers, so they are restricted to the Resource
+  Manager host for the selected environment over HTTPS. This keeps an access token from being sent elsewhere.
+- When `-Headers` is supplied the request is issued with an explicit bearer token and redirects are not followed.
 - `Logs\` and `Output\` are runtime folders and are not intended for source control.
+
+> The hash manifest detects modification of an already-trusted package. It is not a substitute for authenticating
+> the download itself, because an attacker who can rewrite the package can also rewrite the manifest. Verify the
+> release archive through a signed or independently published checksum before first use.
 
 ## Module Resolution Behavior
 
@@ -214,8 +224,25 @@ Default behavior is deterministic:
 
 - Use a bundled module when no newer valid installed version is available.
 - Prefer a newer installed version when it is valid and importable.
-- Use `-PreferBundledModules` to force bundled content.
-- Use `-PreferInstalledModules` to make the installed-module preference explicit.
+- Use `-PreferBundledModules` to force bundled content, falling back to an installed copy only if the bundled import fails.
+- Use `-PreferInstalledModules` to force a locally installed copy even when the bundled version is newer, falling back to the bundled copy only if the installed import fails.
+
+## Long-Running Operations
+
+ARM operations that return `201`/`202` are polled to completion by default. Polling honors a service-supplied
+`Retry-After` header, and otherwise backs off from the starting interval to a 30 second ceiling.
+
+```powershell
+# Return the initial 202 immediately instead of polling.
+.\ArmClient-PS.ps1 -Operation "AcsEmailDomainInitiateVerification" -OperationParameters @{ ... } -NoWait
+
+# Poll every 15 seconds and allow up to 4 hours.
+.\ArmClient-PS.ps1 -Method PUT -RelativePath "/subscriptions/<id>/resourceGroups/<rg>" -ApiVersion "2021-04-01" `
+  -BodyFile "rg.json" -PollIntervalSeconds 15 -LongRunningTimeoutSeconds 14400
+```
+
+Use `-LongRunningTimeoutSeconds 0` to wait indefinitely. Throttled (`429`) and transient responses are retried
+automatically; `5xx` responses are only retried for idempotent methods so a `POST` action is never replayed.
 
 ## Distribution Guidance
 

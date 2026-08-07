@@ -31,18 +31,28 @@ Outputs the full definition for the selected operation preset.
 .PARAMETER ApiVersions
 Outputs the relevant API versions for the selected operation preset.
 
+.PARAMETER NoWait
+Returns the initial 201/202 response immediately instead of polling a long-running operation to completion.
+
+.PARAMETER PollIntervalSeconds
+Starting interval between long-running operation status polls. The interval backs off to a 30 second ceiling. A service-supplied Retry-After header always wins.
+
+.PARAMETER LongRunningTimeoutSeconds
+Maximum time to wait for a long-running operation to reach a terminal state. Use 0 to wait indefinitely.
+
 .NOTES
 Script Name: ArmClient-PS.ps1
 Description: Secure ARM-focused REST support utility that uses bundled Az modules.
 Author: Blake Drumm (blakedrumm@microsoft.com)
-Version: 1.0.6
+Version: 1.0.7
 Created Date: 2026-04-03
-Last Updated Date: 2026-08-04
+Last Updated Date: 2026-08-07
 Requirements: Windows PowerShell 5.1 or PowerShell 7.x, bundled Az.Accounts module and dependencies.
 Environments: Supports all Azure cloud environments including AzureCloud, AzureUSGovernment, AzureChinaCloud,
               AzureUSNat, AzureUSSec, and custom environments registered with Add-AzEnvironment (e.g. Azure Stack).
 Notes: Do not log tokens or secrets. Default behavior disables Az context autosave for the current process.
 #>
+#Requires -Version 5.1
 [CmdletBinding(DefaultParameterSetName='Utility')]
 param(
     [Parameter()][ValidateSet('GET','POST','PUT','PATCH','DELETE')][string]$Method='GET',
@@ -56,6 +66,9 @@ param(
     [Parameter()][string]$BodyFile,
     [Parameter()][string]$OutputFile,
     [Parameter()][switch]$RawOutput,
+    [Parameter()][switch]$NoWait,
+    [Parameter()][ValidateRange(1,3600)][int]$PollIntervalSeconds,
+    [Parameter()][ValidateRange(0,604800)][int]$LongRunningTimeoutSeconds,
     [Parameter()][hashtable]$Headers,
     [Parameter()][string]$TenantId,
     [Parameter()][string]$SubscriptionId,
@@ -92,14 +105,20 @@ if ([Net.ServicePointManager]::SecurityProtocol -band [Net.SecurityProtocolType]
 $script:Configuration = [ordered]@{
     ScriptName                   = 'ArmClient-PS.ps1'
     ToolName                     = 'ArmClient-PS'
-    Version                      = '1.0.6'
+    Version                      = '1.0.7'
     Author                       = 'Blake Drumm (blakedrumm@microsoft.com)'
     RequiredRootModules          = @('Az.Accounts')
     SupportedBuiltInEnvironments = @('AzureCloud','AzureUSGovernment','AzureChinaCloud','AzureUSNat','AzureUSSec')
     DeprecatedEnvironments       = @('AzureGermanCloud')
     DefaultJsonDepth             = 100
     DefaultPollIntervalSeconds   = 5
-    LongRunningTimeoutSeconds    = 1800
+    MaxPollIntervalSeconds       = 30
+    LongRunningTimeoutSeconds    = 7200
+    RetryMaxAttempts             = 3
+    RetryMaxDelaySeconds         = 30
+    RetryAnyMethodStatusCodes    = @(408,429)
+    RetryIdempotentStatusCodes   = @(500,502,503,504)
+    IdempotentHttpMethods        = @('GET','PUT','DELETE')
     ManifestDirectoryName        = 'Manifest'
     ModulesDirectoryName         = 'Modules'
     DefaultLogDirectoryName      = 'Logs'
@@ -108,12 +127,17 @@ $script:Configuration = [ordered]@{
     FileHashManifestName         = 'Files.sha256.json'
     VersionsManifestName         = 'Versions.json'
     DangerousHeaders             = @('Authorization','Proxy-Authorization','Cookie','Set-Cookie','Content-Length','Host','Connection','Transfer-Encoding')
+    SupportedHashAlgorithms      = @('SHA256','SHA384','SHA512')
     AllowedSignatureExtensions   = @('.ps1','.psm1','.psd1')
     TextFileExtensions           = @('.ps1','.psm1','.psd1','.ps1xml','.json','.txt','.xml')
     AllowedBodyMethods           = @('POST','PUT','PATCH')
     CorrelationHeaderNames       = @('x-ms-correlation-request-id','x-ms-client-request-id','x-ms-routing-request-id')
     RequestHeaderNames           = @('x-ms-request-id','x-ms-arm-service-request-id','x-ms-service-request-id')
 }
+
+# Apply polling overrides here, where $PSBoundParameters still refers to the script's own arguments.
+if ($PSBoundParameters.ContainsKey('PollIntervalSeconds')) { $script:Configuration.DefaultPollIntervalSeconds = $PollIntervalSeconds; if ($script:Configuration.MaxPollIntervalSeconds -lt $PollIntervalSeconds) { $script:Configuration.MaxPollIntervalSeconds = $PollIntervalSeconds } }
+if ($PSBoundParameters.ContainsKey('LongRunningTimeoutSeconds')) { $script:Configuration.LongRunningTimeoutSeconds = $LongRunningTimeoutSeconds }
 
 $script:ScriptPath = if ($PSCommandPath) { $PSCommandPath } elseif ($MyInvocation.MyCommand.Path) { $MyInvocation.MyCommand.Path } else { Join-Path (Get-Location).Path $script:Configuration.ScriptName }
 $script:SessionState = [ordered]@{
@@ -139,9 +163,13 @@ $script:SessionState['BoundParameterNames'] = @($PSBoundParameters.Keys)
 # creation, and log output.
 function Get-ScriptRoot { [CmdletBinding()] param() (Split-Path -Path $script:ScriptPath -Parent) }
 function Ensure-Directory { [CmdletBinding()] param([Parameter(Mandatory=$true)][string]$Path) if (-not (Test-Path -LiteralPath $Path)) { $null = New-Item -Path $Path -ItemType Directory -Force } }
-function ConvertTo-NormalizedRelativePath { [CmdletBinding()] param([Parameter(Mandatory=$true)][string]$Path) $Path.Replace('/','\').TrimStart('.').TrimStart('\').ToLowerInvariant() }
-function Get-RelativePathFromRoot { [CmdletBinding()] param([Parameter(Mandatory=$true)][string]$FullPath) $root=[IO.Path]::GetFullPath($script:SessionState.ScriptRoot); $path=[IO.Path]::GetFullPath($FullPath); if(-not $path.StartsWith($root,[StringComparison]::OrdinalIgnoreCase)){ throw "Path '$FullPath' is outside of script root '$root'." }; $path.Substring($root.Length).TrimStart('\','/') }
+# Rejects rooted paths and traversal segments so a tampered manifest cannot reach outside the package.
+function ConvertTo-NormalizedRelativePath { [CmdletBinding()] param([Parameter(Mandatory=$true)][string]$Path) $normalized=$Path.Replace('/','\'); if([string]::IsNullOrWhiteSpace($normalized) -or [IO.Path]::IsPathRooted($normalized) -or $normalized.Contains(':') -or ($normalized -match '(^|\\)\.\.?($|\\)')){ throw "Package path '$Path' is not a canonical relative path." }; $normalized.ToLowerInvariant() }
+function ConvertTo-NormalizedDirectoryPrefix { [CmdletBinding()] param([Parameter(Mandatory=$true)][string]$Path) (ConvertTo-NormalizedRelativePath -Path $Path).TrimEnd('\') + '\' }
+function Get-RelativePathFromRoot { [CmdletBinding()] param([Parameter(Mandatory=$true)][string]$FullPath) $root=[IO.Path]::GetFullPath($script:SessionState.ScriptRoot).TrimEnd('\','/'); $path=[IO.Path]::GetFullPath($FullPath); if(-not $path.StartsWith($root + [IO.Path]::DirectorySeparatorChar,[StringComparison]::OrdinalIgnoreCase)){ throw "Path '$FullPath' is outside of script root '$root'." }; $path.Substring($root.Length).TrimStart('\','/') }
 function Get-HashtableValueIgnoreCase { [CmdletBinding()] param([AllowNull()][Collections.IDictionary]$Table,[Parameter(Mandatory=$true)][string]$Key) if($null -eq $Table){return $null}; foreach($entryKey in $Table.Keys){ if([string]::Equals([string]$entryKey,$Key,[StringComparison]::OrdinalIgnoreCase)){ return $Table[$entryKey] } }; $null }
+# StrictMode Latest throws on a missing property, so every JSON and manifest read goes through this accessor.
+function Get-ObjectMemberValueSafe { [CmdletBinding()] param([AllowNull()][object]$InputObject,[Parameter(Mandatory=$true)][string]$Name) if($null -eq $InputObject){ return $null }; if($InputObject -is [Collections.IDictionary]){ if($InputObject.Contains($Name)){ return $InputObject[$Name] }; return $null }; $property=$InputObject.PSObject.Properties[$Name]; if($property){ $property.Value } else { $null } }
 function Get-RequestedSubscriptionIdSafe { [CmdletBinding()] param() if($SubscriptionId){ return $SubscriptionId }; $requested = Get-HashtableValueIgnoreCase -Table $OperationParameters -Key 'subscriptionId'; if($requested){ return [string]$requested }; $null }
 
 function Redact-SensitiveText {
@@ -149,15 +177,18 @@ function Redact-SensitiveText {
     if ([string]::IsNullOrWhiteSpace($Text)) { return $Text }
     # Match common credential/token shapes across plain text, JSON, and error
     # messages so logs stay useful without exposing secrets.
+    $secretKeyNames = 'authorization|proxy-authorization|x-ms-authorization-auxiliary|x-functions-key|access[_-]?token|refresh[_-]?token|id[_-]?token|client[_-]?secret|secret|password|pwd|assertion|cookie|set-cookie|sig|account[_-]?key|shared[_-]?access[_-]?(?:key|signature)|api[_-]?key|subscription[_-]?key|private[_-]?key|connection[_ -]?string'
     $patterns = @(
         '(?i)(Authorization\s*[:=]\s*)(Bearer\s+)?[^\r\n;]+',
-        '(?i)("?(authorization|access[_-]?token|refresh[_-]?token|id[_-]?token|client[_-]?secret|secret|password|assertion|cookie|set-cookie)"?\s*[:=]\s*")[^"]+(")',
-        '(?i)("?(authorization|access[_-]?token|refresh[_-]?token|id[_-]?token|client[_-]?secret|secret|password|assertion|cookie|set-cookie)"?\s*[:=]\s*)[^,}\]\r\n]+'
+        ('(?i)("?(' + $secretKeyNames + ')"?\s*[:=]\s*")[^"]+(")'),
+        ('(?i)("?(' + $secretKeyNames + ')"?\s*[:=]\s*)[^,}\]\r\n]+')
     )
     $redacted = $Text
     foreach ($pattern in $patterns) {
         $redacted = [regex]::Replace($redacted,$pattern,{ param($m) $v=$m.Value; $i=$v.IndexOf(':'); if($i -lt 0){$i=$v.IndexOf('=')}; if($i -gt -1){ $v.Substring(0,$i+1)+' [REDACTED]' } else { '[REDACTED]' } })
     }
+    $redacted = [regex]::Replace($redacted,'(?is)-----BEGIN (?:[A-Z0-9]+ )*PRIVATE KEY-----.*?-----END (?:[A-Z0-9]+ )*PRIVATE KEY-----','[REDACTED PRIVATE KEY]')
+    $redacted = [regex]::Replace($redacted,'(?<![A-Za-z0-9_-])eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]*','[REDACTED JWT]')
     [regex]::Replace($redacted,'(?i)Bearer\s+[A-Za-z0-9\-\._~\+\/]+=*','Bearer [REDACTED]')
 }
 
@@ -226,14 +257,16 @@ function Get-NormalizedFileHash {
     if ($script:Configuration.TextFileExtensions -contains $ext) {
         # Normalize line endings before hashing text files so the same packaged
         # content produces the same manifest hash on Windows and non-Windows hosts.
+        # Compacting in place avoids a per-byte List[byte] copy that dominated startup time.
         $bytes = [IO.File]::ReadAllBytes($LiteralPath)
-        $normalized = [Collections.Generic.List[byte]]::new($bytes.Length)
+        $writeIndex = 0
         for ($i = 0; $i -lt $bytes.Length; $i++) {
             if ($bytes[$i] -eq 0x0D -and ($i + 1) -lt $bytes.Length -and $bytes[$i + 1] -eq 0x0A) { continue }
-            $normalized.Add($bytes[$i])
+            $bytes[$writeIndex] = $bytes[$i]; $writeIndex++
         }
         $hashImpl = [Security.Cryptography.HashAlgorithm]::Create($Algorithm)
-        try { $hashBytes = $hashImpl.ComputeHash($normalized.ToArray()) } finally { $hashImpl.Dispose() }
+        if ($null -eq $hashImpl) { throw "Hash algorithm '$Algorithm' is not available on this platform." }
+        try { $hashBytes = $hashImpl.ComputeHash($bytes,0,$writeIndex) } finally { $hashImpl.Dispose() }
         return ([BitConverter]::ToString($hashBytes).Replace('-','')).ToUpperInvariant()
     }
     (Get-FileHash -LiteralPath $LiteralPath -Algorithm $Algorithm).Hash.ToUpperInvariant()
@@ -243,19 +276,29 @@ function Test-FileHashManifest {
     [CmdletBinding()] param([string[]]$RelativePaths)
     if ($SkipHashValidation) { Write-Log -Level 'WARN' -Message 'Hash validation was skipped because -SkipHashValidation was supplied.'; return }
     $manifest = Get-FileHashManifestSafe
-    $entries = @($manifest.files)
+    $entries = @(Get-ObjectMemberValueSafe -InputObject $manifest -Name 'files')
     if ($RelativePaths) {
-        $filter = $RelativePaths | ForEach-Object { ConvertTo-NormalizedRelativePath -Path $_ }
-        $entries = $entries | Where-Object { (ConvertTo-NormalizedRelativePath -Path $_.path) -in $filter }
+        $filter = @($RelativePaths | ForEach-Object { ConvertTo-NormalizedRelativePath -Path $_ } | Sort-Object -Unique)
+        $entries = @($entries | Where-Object { $entryPath = [string](Get-ObjectMemberValueSafe -InputObject $_ -Name 'path'); $entryPath -and ((ConvertTo-NormalizedRelativePath -Path $entryPath) -in $filter) })
+        # Every requested path must be covered, otherwise a trimmed manifest silently validates fewer files than expected.
+        $covered = @{}; foreach ($entry in $entries) { $covered[(ConvertTo-NormalizedRelativePath -Path ([string](Get-ObjectMemberValueSafe -InputObject $entry -Name 'path')))] = $true }
+        foreach ($required in $filter) { if (-not $covered.ContainsKey($required)) { throw "File hash manifest is missing required package entry '$required'. Rebuild the package with Build-BundledModules.ps1 before distribution." } }
     }
     if ($entries.Count -lt 1) { throw 'File hash manifest does not contain the required package entries. Rebuild the package with Build-BundledModules.ps1 before distribution.' }
     foreach ($entry in $entries) {
-        $fullPath = Join-Path $script:SessionState.ScriptRoot ([string]$entry.path)
-        if (-not (Test-Path -LiteralPath $fullPath)) { throw "Hash validation failed because '$($entry.path)' is missing. The package is incomplete or was modified after packaging." }
-        $hashAlgorithm = if ($entry.algorithm) { [string]$entry.algorithm } else { 'SHA256' }
+        $entryPath = [string](Get-ObjectMemberValueSafe -InputObject $entry -Name 'path')
+        if ([string]::IsNullOrWhiteSpace($entryPath)) { throw 'File hash manifest contains an entry without a path. Rebuild the package with Build-BundledModules.ps1 before distribution.' }
+        $null = ConvertTo-NormalizedRelativePath -Path $entryPath
+        $fullPath = Join-Path $script:SessionState.ScriptRoot $entryPath
+        $null = Get-RelativePathFromRoot -FullPath $fullPath
+        if (-not (Test-Path -LiteralPath $fullPath)) { throw "Hash validation failed because '$entryPath' is missing. The package is incomplete or was modified after packaging." }
+        $entryAlgorithm = [string](Get-ObjectMemberValueSafe -InputObject $entry -Name 'algorithm')
+        $hashAlgorithm = if ($entryAlgorithm) { $entryAlgorithm } else { 'SHA256' }
+        # Pin the algorithm set so a tampered manifest cannot downgrade validation to a broken hash.
+        if ($script:Configuration.SupportedHashAlgorithms -notcontains $hashAlgorithm) { throw "Hash algorithm '$hashAlgorithm' requested for '$entryPath' is not permitted. Rebuild the package with Build-BundledModules.ps1 before distribution." }
         $actual = Get-NormalizedFileHash -LiteralPath $fullPath -Algorithm $hashAlgorithm
-        $expected = ([string]$entry.hash).ToUpperInvariant()
-        if ($actual -ne $expected) { throw "Hash validation failed for '$($entry.path)'. The package contents no longer match the trusted manifest. Rebuild or replace the package before continuing." }
+        $expected = ([string](Get-ObjectMemberValueSafe -InputObject $entry -Name 'hash')).ToUpperInvariant()
+        if ($actual -ne $expected) { throw "Hash validation failed for '$entryPath'. The package contents no longer match the trusted manifest. Rebuild or replace the package before continuing." }
     }
     Write-Log -Level 'INFO' -Message ('Validated {0} file hash entries.' -f $entries.Count)
 }
@@ -287,16 +330,26 @@ function Test-BundledModuleFiles {
     $paths.Add($script:Configuration.ScriptName)
     $paths.Add('Build-BundledModules.ps1')
     $paths.Add((Join-Path $script:Configuration.ManifestDirectoryName $script:Configuration.VersionsManifestName))
-    foreach ($entry in @((Get-FileHashManifestSafe).files)) {
-        $relativePath = [string]$entry.path
-        if ((ConvertTo-NormalizedRelativePath -Path $relativePath).StartsWith((ConvertTo-NormalizedRelativePath -Path $script:Configuration.ModulesDirectoryName))) { $paths.Add($relativePath) }
+    $modulePrefix = ConvertTo-NormalizedDirectoryPrefix -Path $script:Configuration.ModulesDirectoryName
+    $manifestModuleFiles = @{}
+    foreach ($entry in @(Get-ObjectMemberValueSafe -InputObject (Get-FileHashManifestSafe) -Name 'files')) {
+        $relativePath = [string](Get-ObjectMemberValueSafe -InputObject $entry -Name 'path')
+        if (-not $relativePath) { continue }
+        $normalizedPath = ConvertTo-NormalizedRelativePath -Path $relativePath
+        if ($normalizedPath.StartsWith($modulePrefix,[StringComparison]::OrdinalIgnoreCase)) { $paths.Add($relativePath); $manifestModuleFiles[$normalizedPath] = $true }
+    }
+    # Az modules dot-source every file in StartupScripts and PostImportScripts, so an added
+    # file would execute without changing any hashed file. Reject anything not in the manifest.
+    foreach ($moduleFile in @(Get-ChildItem -LiteralPath $script:SessionState.ModulesPath -Recurse -File -Force)) {
+        $actualRelativePath = Get-RelativePathFromRoot -FullPath $moduleFile.FullName
+        if (-not $manifestModuleFiles.ContainsKey((ConvertTo-NormalizedRelativePath -Path $actualRelativePath))) { throw "Bundled module file '$actualRelativePath' is not listed in the file hash manifest. The package was modified after packaging; rebuild or replace it before continuing." }
     }
     Test-FileHashManifest -RelativePaths ($paths.ToArray())
 }
 
 function Import-ModuleManifestDataSafe { [CmdletBinding()] param([Parameter(Mandatory=$true)][string]$ManifestPath) try { Import-PowerShellDataFile -Path $ManifestPath } catch { Write-Log -Level 'WARN' -Message "Unable to parse module manifest '$ManifestPath'." -Data $_.Exception.Message; $null } }
 function Get-ManifestValueSafe { [CmdletBinding()] param([Parameter(Mandatory=$true)][object]$ManifestData,[Parameter(Mandatory=$true)][string]$Name) if($ManifestData -is [Collections.IDictionary]){ if($ManifestData.Contains($Name)){ $ManifestData[$Name] } else { $null } } else { $property=$ManifestData.PSObject.Properties[$Name]; if($property){ $property.Value } else { $null } } }
-function ConvertTo-VersionSafe { [CmdletBinding()] param([AllowNull()][object]$Value) if($null -eq $Value){return [version]'0.0.0.0'}; try {[version]($Value.ToString())} catch { $parts=($Value.ToString() -split '[^0-9]+' | ? { $_ }); while($parts.Count -lt 4){ $parts += '0' }; [version]($parts[0..3] -join '.') } }
+function ConvertTo-VersionSafe { [CmdletBinding()] param([AllowNull()][object]$Value) if($null -eq $Value){return [version]'0.0.0.0'}; try {[version]($Value.ToString())} catch { $parts=@($Value.ToString() -split '[^0-9]+' | Where-Object { $_ }); while($parts.Count -lt 4){ $parts += '0' }; try { [version]($parts[0..3] -join '.') } catch { [version]'0.0.0.0' } } }
 
 function New-ModuleInfoObject {
     [CmdletBinding()] param([Parameter(Mandatory=$true)][string]$Name,[Parameter(Mandatory=$true)][string]$ManifestPath,[Parameter(Mandatory=$true)][string]$ModuleBase,[Parameter(Mandatory=$true)][string]$Source)
@@ -356,9 +409,10 @@ function Resolve-PreferredModuleVersion {
     $installed = Get-InstalledModuleInfoSafe -ModuleName $ModuleName | Select-Object -First 1
     # Auto mode prefers the newer available module while still allowing callers
     # to force bundled-only or installed-preferred behavior explicitly.
-    $mode = if ($PreferBundledModules) { 'PreferBundled' } elseif ($PreferInstalledModules) { 'PreferInstalledWhenNewer' } else { 'Auto' }
+    $mode = if ($PreferBundledModules) { 'PreferBundled' } elseif ($PreferInstalledModules) { 'PreferInstalled' } else { 'Auto' }
     $preferred = $null; $fallback = $null
     if ($PreferBundledModules) { $preferred = $bundled; $fallback = $installed }
+    elseif ($PreferInstalledModules) { $preferred = $installed; $fallback = $bundled }
     elseif ($installed -and $bundled) { if ($installed.VersionNormalized -gt $bundled.VersionNormalized) { $preferred=$installed; $fallback=$bundled } else { $preferred=$bundled; $fallback=$installed } }
     elseif ($installed) { $preferred = $installed }
     elseif ($bundled) { $preferred = $bundled }
@@ -374,7 +428,7 @@ function Get-ResolvedModuleTable {
     $moduleNames = [Collections.Generic.List[string]]::new()
     foreach ($name in $script:Configuration.RequiredRootModules) { $moduleNames.Add($name) }
     $versionsManifest = Get-VersionsManifestSafe
-    if ($versionsManifest -and $versionsManifest.modules) { foreach ($module in @($versionsManifest.modules)) { if ($module.name) { $moduleNames.Add([string]$module.name) } } }
+    foreach ($module in @(Get-ObjectMemberValueSafe -InputObject $versionsManifest -Name 'modules')) { $manifestModuleName = [string](Get-ObjectMemberValueSafe -InputObject $module -Name 'name'); if ($manifestModuleName) { $moduleNames.Add($manifestModuleName) } }
     foreach ($moduleName in ($moduleNames | Sort-Object -Unique)) { Add-ResolvedModuleToTable -Table $table -ModuleName $moduleName }
     $ordered = [Collections.Generic.List[object]]::new(); $visit = @{}
     # Resolve dependencies depth-first so imports happen in dependency order and
@@ -413,7 +467,7 @@ function Clear-ModuleZoneIdentifier {
 function Import-ResolvedModule {
     [CmdletBinding()] param([Parameter(Mandatory=$true)][pscustomobject]$ResolutionItem)
     # Try the preferred candidate first and only fall back if that import fails.
-    $queue = [Collections.Generic.List[object]]::new(); if ($ResolutionItem.PreferredCandidate) { $queue.Add($ResolutionItem.PreferredCandidate) }; if ($ResolutionItem.FallbackCandidate -and ($ResolutionItem.PreferredCandidate -eq $null -or $ResolutionItem.FallbackCandidate.ManifestPath -ne $ResolutionItem.PreferredCandidate.ManifestPath)) { $queue.Add($ResolutionItem.FallbackCandidate) }
+    $queue = [Collections.Generic.List[object]]::new(); if ($ResolutionItem.PreferredCandidate) { $queue.Add($ResolutionItem.PreferredCandidate) }; if ($ResolutionItem.FallbackCandidate -and ($null -eq $ResolutionItem.PreferredCandidate -or $ResolutionItem.FallbackCandidate.ManifestPath -ne $ResolutionItem.PreferredCandidate.ManifestPath)) { $queue.Add($ResolutionItem.FallbackCandidate) }
     $assemblyConflictDetected = $false
     foreach ($candidate in $queue) {
         try {
@@ -428,9 +482,10 @@ function Import-ResolvedModule {
                     # Re-validate just the selected module subtree immediately
                     # before import to reduce the chance of a tampered module loading.
                     $moduleRelativeRoot = Get-RelativePathFromRoot -FullPath $candidate.ModuleBase
-                    $moduleEntries = @((Get-FileHashManifestSafe).files | ? { (ConvertTo-NormalizedRelativePath -Path $_.path).StartsWith((ConvertTo-NormalizedRelativePath -Path $moduleRelativeRoot)) })
+                    $modulePathPrefix = ConvertTo-NormalizedDirectoryPrefix -Path $moduleRelativeRoot
+                    $moduleEntries = @(Get-ObjectMemberValueSafe -InputObject (Get-FileHashManifestSafe) -Name 'files' | Where-Object { $entryPath=[string](Get-ObjectMemberValueSafe -InputObject $_ -Name 'path'); $entryPath -and (ConvertTo-NormalizedRelativePath -Path $entryPath).StartsWith($modulePathPrefix,[StringComparison]::OrdinalIgnoreCase) })
                     if ($moduleEntries.Count -lt 1) { throw "Bundled module '$($candidate.Name)' was selected from '$moduleRelativeRoot' but no matching hash manifest entries were found. Rebuild the package manifests before distribution." }
-                    Test-FileHashManifest -RelativePaths ($moduleEntries | % { [string]$_.path })
+                    Test-FileHashManifest -RelativePaths ($moduleEntries | ForEach-Object { [string](Get-ObjectMemberValueSafe -InputObject $_ -Name 'path') })
                 }
             }
             Clear-ModuleZoneIdentifier -ModuleBase $candidate.ModuleBase
@@ -461,8 +516,8 @@ function Import-BundledModules { [CmdletBinding()] param() Test-BundledModuleFil
 # Authentication helpers. These functions validate identifiers, establish the
 # process-scoped Az context, and recover interactively when tenant or
 # subscription selection cannot be resolved automatically.
-function Test-TenantIdentifier { [CmdletBinding()] param([string]$Value) if([string]::IsNullOrWhiteSpace($Value)){return $true}; if($Value -match '^[0-9a-fA-F-]{36}$'){return $true}; ($Value -match '^[A-Za-z0-9][A-Za-z0-9\.-]*\.[A-Za-z]{2,}$') }
-function Test-SubscriptionIdentifier { [CmdletBinding()] param([string]$Value) if([string]::IsNullOrWhiteSpace($Value)){return $true}; ($Value -match '^[0-9a-fA-F-]{36}$') }
+function Test-TenantIdentifier { [CmdletBinding()] param([string]$Value) if([string]::IsNullOrWhiteSpace($Value)){return $true}; $parsedGuid=[guid]::Empty; if([guid]::TryParseExact($Value,'D',[ref]$parsedGuid)){return $true}; ($Value -match '^[A-Za-z0-9][A-Za-z0-9\.-]*\.[A-Za-z]{2,}$') }
+function Test-SubscriptionIdentifier { [CmdletBinding()] param([string]$Value) if([string]::IsNullOrWhiteSpace($Value)){return $true}; $parsedGuid=[guid]::Empty; [guid]::TryParseExact($Value,'D',[ref]$parsedGuid) }
 function Test-SubscriptionErrorMessage { [CmdletBinding()] param([Parameter(Mandatory=$true)][string]$Message) ($Message -like '*does not have access to subscription*') -or ($Message -like '*could not be found*' -and $Message -like '*subscription*') }
 function Test-TenantErrorMessage { [CmdletBinding()] param([Parameter(Mandatory=$true)][string]$Message) ($Message -like '*Unable to acquire token for tenant*') -or ($Message -like '*User interaction is required*' -and $Message -like '*tenant*') -or ($Message -like '*multiple tenants*') -or ($Message -like '*AADSTS50076*') -or ($Message -like '*tenant*' -and $Message -like '*MFA*') }
 function Test-InteractiveBrowserAuthenticationError { [CmdletBinding()] param([Parameter(Mandatory=$true)][string]$Message) ($Message -like '*InteractiveBrowserCredential*authentication failed*') -or ($Message -like '*browser is not supported in this session*') }
@@ -737,7 +792,7 @@ function Get-ArmOperationPresetCatalog {
         New-ArmOperationPreset -Name 'AcsEmailDomainCreateOrUpdate' -Category 'ACS.Email' -Description 'Create or update an ACS email domain.' -Method 'PUT' -RelativePathTemplate '/subscriptions/{subscriptionId}/resourceGroups/{resourceGroupName}/providers/Microsoft.Communication/emailServices/{emailServiceName}/domains/{domainName}' -DefaultApiVersion '2023-03-31' -Aliases @('new-email-domain','set-email-domain') -ProviderNamespace 'Microsoft.Communication' -ResourceType 'emailServices/domains' -RequiredParameters @('subscriptionId','resourceGroupName','emailServiceName','domainName') -ExampleParameters @{ subscriptionId='<subscription-id>'; resourceGroupName='rg-example'; emailServiceName='mailsvc1'; domainName='contoso.com' } -ExampleBody @{ location='global'; properties=@{ domainManagement='CustomerManaged'; userEngagementTracking='Disabled' } } -KnownApiVersions @('2026-03-18','2025-09-01','2025-05-01','2025-05-01-preview','2024-09-01-preview','2023-06-01-preview','2023-04-01','2023-04-01-preview','2023-03-31','2023-03-01-preview','2022-07-01-preview','2021-10-01-preview')
         New-ArmOperationPreset -Name 'AcsEmailDomainUpdate' -Category 'ACS.Email' -Description 'Patch an ACS email domain.' -Method 'PATCH' -RelativePathTemplate '/subscriptions/{subscriptionId}/resourceGroups/{resourceGroupName}/providers/Microsoft.Communication/emailServices/{emailServiceName}/domains/{domainName}' -DefaultApiVersion '2023-03-31' -Aliases @('update-email-domain','patch-email-domain') -ProviderNamespace 'Microsoft.Communication' -ResourceType 'emailServices/domains' -RequiredParameters @('subscriptionId','resourceGroupName','emailServiceName','domainName') -ExampleParameters @{ subscriptionId='<subscription-id>'; resourceGroupName='rg-example'; emailServiceName='mailsvc1'; domainName='contoso.com' } -ExampleBody @{ properties=@{ userEngagementTracking='Enabled' } } -KnownApiVersions @('2026-03-18','2025-09-01','2025-05-01','2025-05-01-preview','2024-09-01-preview','2023-06-01-preview','2023-04-01','2023-04-01-preview','2023-03-31','2023-03-01-preview','2022-07-01-preview','2021-10-01-preview')
         New-ArmOperationPreset -Name 'AcsEmailDomainDelete' -Category 'ACS.Email' -Description 'Delete an ACS email domain.' -Method 'DELETE' -RelativePathTemplate '/subscriptions/{subscriptionId}/resourceGroups/{resourceGroupName}/providers/Microsoft.Communication/emailServices/{emailServiceName}/domains/{domainName}' -DefaultApiVersion '2023-03-31' -Aliases @('remove-email-domain','delete-email-domain') -ProviderNamespace 'Microsoft.Communication' -ResourceType 'emailServices/domains' -RequiredParameters @('subscriptionId','resourceGroupName','emailServiceName','domainName') -ExampleParameters @{ subscriptionId='<subscription-id>'; resourceGroupName='rg-example'; emailServiceName='mailsvc1'; domainName='contoso.com' } -KnownApiVersions @('2026-03-18','2025-09-01','2025-05-01','2025-05-01-preview','2024-09-01-preview','2023-06-01-preview','2023-04-01','2023-04-01-preview','2023-03-31','2023-03-01-preview','2022-07-01-preview','2021-10-01-preview')
-        New-ArmOperationPreset -Name 'AcsEmailDomainInitiateVerification' -Category 'ACS.Email' -Description 'Initiate Domain, SPF, DKIM, DKIM2, or DMARC verification for an ACS email domain.' -Method 'POST' -RelativePathTemplate '/subscriptions/{subscriptionId}/resourceGroups/{resourceGroupName}/providers/Microsoft.Communication/emailServices/{emailServiceName}/domains/{domainName}/initiateVerification' -DefaultApiVersion '2023-03-31' -Aliases @('acs-domain-initiate-verification','verify-email-domain','dkim-verify') -ProviderNamespace 'Microsoft.Communication' -ResourceType 'emailServices/domains' -RequiredParameters @('subscriptionId','resourceGroupName','emailServiceName','domainName','verificationType') -OptionalParameters @('subscriptionId') -DefaultBodyTemplate @{ verificationType='{verificationType}' } -ExampleParameters @{ subscriptionId='<subscription-id>'; resourceGroupName='rg-example'; emailServiceName='mailsvc1'; domainName='contoso.com'; verificationType='DKIM2' } -ExampleBody @{ verificationType='DKIM2' } -KnownApiVersions @('2026-03-18','2025-09-01','2025-05-01','2025-05-01-preview','2024-09-01-preview','2023-06-01-preview','2023-04-01','2023-04-01-preview','2023-03-31','2023-03-01-preview','2022-07-01-preview','2021-10-01-preview') -Notes @('Accepted verification types include Domain, SPF, DKIM, DKIM2, and DMARC.','If -Body is not provided, the preset auto-builds {"verificationType":"<value>"} from -OperationParameters.')
+        New-ArmOperationPreset -Name 'AcsEmailDomainInitiateVerification' -Category 'ACS.Email' -Description 'Initiate Domain, SPF, DKIM, DKIM2, or DMARC verification for an ACS email domain.' -Method 'POST' -RelativePathTemplate '/subscriptions/{subscriptionId}/resourceGroups/{resourceGroupName}/providers/Microsoft.Communication/emailServices/{emailServiceName}/domains/{domainName}/initiateVerification' -DefaultApiVersion '2023-03-31' -Aliases @('acs-domain-initiate-verification','verify-email-domain','dkim-verify') -ProviderNamespace 'Microsoft.Communication' -ResourceType 'emailServices/domains' -RequiredParameters @('subscriptionId','resourceGroupName','emailServiceName','domainName','verificationType') -DefaultBodyTemplate @{ verificationType='{verificationType}' } -ExampleParameters @{ subscriptionId='<subscription-id>'; resourceGroupName='rg-example'; emailServiceName='mailsvc1'; domainName='contoso.com'; verificationType='DKIM2' } -ExampleBody @{ verificationType='DKIM2' } -KnownApiVersions @('2026-03-18','2025-09-01','2025-05-01','2025-05-01-preview','2024-09-01-preview','2023-06-01-preview','2023-04-01','2023-04-01-preview','2023-03-31','2023-03-01-preview','2022-07-01-preview','2021-10-01-preview') -Notes @('Accepted verification types include Domain, SPF, DKIM, DKIM2, and DMARC.','If -Body is not provided, the preset auto-builds {"verificationType":"<value>"} from -OperationParameters.')
         New-ArmOperationPreset -Name 'AcsEmailDomainCancelVerification' -Category 'ACS.Email' -Description 'Cancel Domain, SPF, DKIM, DKIM2, or DMARC verification for an ACS email domain.' -Method 'POST' -RelativePathTemplate '/subscriptions/{subscriptionId}/resourceGroups/{resourceGroupName}/providers/Microsoft.Communication/emailServices/{emailServiceName}/domains/{domainName}/cancelVerification' -DefaultApiVersion '2023-03-31' -Aliases @('acs-domain-cancel-verification','stop-email-domain-verification') -ProviderNamespace 'Microsoft.Communication' -ResourceType 'emailServices/domains' -RequiredParameters @('subscriptionId','resourceGroupName','emailServiceName','domainName','verificationType') -DefaultBodyTemplate @{ verificationType='{verificationType}' } -ExampleParameters @{ subscriptionId='<subscription-id>'; resourceGroupName='rg-example'; emailServiceName='mailsvc1'; domainName='contoso.com'; verificationType='DKIM2' } -ExampleBody @{ verificationType='DKIM2' } -KnownApiVersions @('2026-03-18','2025-09-01','2025-05-01','2025-05-01-preview','2024-09-01-preview','2023-06-01-preview','2023-04-01','2023-04-01-preview','2023-03-31','2023-03-01-preview','2022-07-01-preview','2021-10-01-preview') -Notes @('Accepted verification types include Domain, SPF, DKIM, DKIM2, and DMARC.','If -Body is not provided, the preset auto-builds {"verificationType":"<value>"} from -OperationParameters.')
     )
 }
@@ -878,7 +933,13 @@ function Show-ArmOperationApiVersions {
 # ARM request helpers. These functions normalize URIs, validate headers/body
 # content, invoke the request, and unwrap ARM-specific response patterns.
 function ConvertFrom-QueryStringSafe { [CmdletBinding()] param([string]$Query) $table=[ordered]@{}; if([string]::IsNullOrWhiteSpace($Query)){return $table}; foreach($pair in ($Query.TrimStart('?') -split '&')){ if([string]::IsNullOrWhiteSpace($pair)){continue}; $name,$value=$pair -split '=',2; $table[[Net.WebUtility]::UrlDecode($name)] = if($null -ne $value){ [Net.WebUtility]::UrlDecode($value) } else { '' } }; $table }
-function ConvertTo-QueryStringSafe { [CmdletBinding()] param([Parameter(Mandatory=$true)][hashtable]$Table) (($Table.Keys | % { '{0}={1}' -f [Net.WebUtility]::UrlEncode([string]$_), [Net.WebUtility]::UrlEncode([string]$Table[$_]) }) -join '&') }
+function ConvertTo-QueryStringSafe { [CmdletBinding()] param([Parameter(Mandatory=$true)][Collections.IDictionary]$Table) (($Table.Keys | ForEach-Object { '{0}={1}' -f [Net.WebUtility]::UrlEncode([string]$_), [Net.WebUtility]::UrlEncode([string]$Table[$_]) }) -join '&') }
+
+# The long-running-operation poll target comes from a response header, not from the caller, and the
+# poll request carries an ARM bearer token. Restrict it to the Resource Manager host for this
+# environment so a rogue or reflected header cannot redirect that token to another destination.
+function Test-TrustedArmUri { [CmdletBinding()] param([Parameter(Mandatory=$true)][System.Uri]$CandidateUri,[Parameter(Mandatory=$true)][string]$ResourceManagerUrl) if(-not $CandidateUri.IsAbsoluteUri -or $CandidateUri.Scheme -ne 'https' -or -not [string]::IsNullOrEmpty($CandidateUri.UserInfo)){ return $false }; $resourceManagerUri=$null; try { $resourceManagerUri=[System.Uri]$ResourceManagerUrl } catch { return $false }; if($null -eq $resourceManagerUri -or -not $resourceManagerUri.IsAbsoluteUri){ return $false }; $candidateHost=$CandidateUri.DnsSafeHost; $resourceManagerHost=$resourceManagerUri.DnsSafeHost; ([string]::Equals($candidateHost,$resourceManagerHost,[StringComparison]::OrdinalIgnoreCase) -or $candidateHost.EndsWith('.' + $resourceManagerHost,[StringComparison]::OrdinalIgnoreCase)) }
+function Resolve-ArmPollingUri { [CmdletBinding()] param([Parameter(Mandatory=$true)][string]$HeaderValue,[Parameter(Mandatory=$true)][System.Uri]$BaseUri,[Parameter(Mandatory=$true)][string]$ResourceManagerUrl) $candidate=$null; try { $candidate=[System.Uri]::new($BaseUri,$HeaderValue.Trim()) } catch { throw "The ARM long-running-operation endpoint '$HeaderValue' is not a valid URI." }; if(-not (Test-TrustedArmUri -CandidateUri $candidate -ResourceManagerUrl $ResourceManagerUrl)){ throw "The ARM long-running-operation endpoint '$($candidate.AbsoluteUri)' is not an HTTPS endpoint of the Resource Manager host for this environment. Polling was stopped so the access token is not sent to an untrusted destination." }; $candidate }
 
 function Resolve-ArmUri {
     [CmdletBinding()] param([System.Uri]$RequestUri,[string]$RequestRelativePath,[string]$RequestApiVersion)
@@ -894,6 +955,7 @@ function Resolve-ArmUri {
         if ($RequestUri.Scheme -ne 'https') { throw 'Only HTTPS ARM URIs are supported.' }
         $builder = [System.UriBuilder]::new($RequestUri); $queryTable = ConvertFrom-QueryStringSafe -Query $builder.Query; $resourceManagerHost = ([System.Uri]$resourceManagerUrl).Host
         if ($builder.Host -eq $resourceManagerHost) { if ($RequestApiVersion) { $queryTable['api-version'] = $RequestApiVersion } elseif (-not $queryTable.Contains('api-version')) { throw 'An ARM request against the Resource Manager endpoint must include api-version either in the URI or through -ApiVersion.' } }
+        elseif (-not (Test-TrustedArmUri -CandidateUri $RequestUri -ResourceManagerUrl $resourceManagerUrl)) { Write-Log -Level 'WARN' -Message ("The supplied -Uri host '{0}' is not the Resource Manager host for environment '{1}'. An Azure Resource Manager access token will be sent to that host when -Headers is also supplied; only use hosts you trust." -f $builder.Host,$context.Environment) }
         $builder.Query = ConvertTo-QueryStringSafe -Table $queryTable
         return [pscustomobject]@{ Mode='Uri'; Uri=$builder.Uri; Path=$builder.Uri.PathAndQuery; ResourceManagerUrl=$resourceManagerUrl }
     }
@@ -906,62 +968,69 @@ function Resolve-ArmUri {
 function Test-JsonContent { [CmdletBinding()] param([Parameter(Mandatory=$true)][string]$Content,[string]$ContentSource='request body') if([string]::IsNullOrWhiteSpace($Content)){ throw "The $ContentSource is empty." }; try { ($Content | ConvertFrom-Json -ErrorAction Stop | ConvertTo-Json -Depth $script:Configuration.DefaultJsonDepth -Compress) } catch { throw "The $ContentSource is not valid JSON. $($_.Exception.Message)" } }
 function Get-ValidatedHeaders { [CmdletBinding()] param([hashtable]$InputHeaders) $validated=@{}; if($null -eq $InputHeaders){return $validated}; foreach($entry in $InputHeaders.GetEnumerator()){ $name=[string]$entry.Key; $value=[string]$entry.Value; if([string]::IsNullOrWhiteSpace($name)){throw 'Custom header names cannot be empty.'}; if($name -notmatch '^[A-Za-z0-9-]+$'){throw "Custom header '$name' contains invalid characters."}; if($script:Configuration.DangerousHeaders -contains $name){throw "Custom header '$name' is blocked for security reasons."}; if($value -match '[\r\n]'){throw "Custom header '$name' contains a newline, which is not allowed."}; $validated[$name]=$value }; $validated }
 function ConvertTo-PlainTextFromSecureString { [CmdletBinding()] param([Parameter(Mandatory=$true)][Security.SecureString]$SecureString) $pointer=[IntPtr]::Zero; try { $pointer=[Runtime.InteropServices.Marshal]::SecureStringToBSTR($SecureString); [Runtime.InteropServices.Marshal]::PtrToStringBSTR($pointer) } finally { if($pointer -ne [IntPtr]::Zero){ [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($pointer) } } }
-function Get-AuthorizationHeaderFromAzContext { [CmdletBinding()] param([Parameter(Mandatory=$true)][string]$ResourceUrl) $tokenResult=Get-AzAccessToken -ResourceUrl $ResourceUrl -ErrorAction Stop; if($null -eq $tokenResult){ throw 'Get-AzAccessToken did not return an access token.' }; $token = if($tokenResult.Token -is [Security.SecureString]){ ConvertTo-PlainTextFromSecureString -SecureString $tokenResult.Token } else { [string]$tokenResult.Token }; if([string]::IsNullOrWhiteSpace($token)){ throw 'Get-AzAccessToken returned an empty access token.' }; @{ Authorization = ('Bearer ' + $token) } }
+function Get-AuthorizationHeaderFromAzContext { [CmdletBinding()] param([Parameter(Mandatory=$true)][string]$ResourceUrl) $tokenResult=Get-AzAccessToken -ResourceTypeName Arm -AsSecureString -ErrorAction Stop; if($null -eq $tokenResult){ throw 'Get-AzAccessToken did not return an access token.' }; $token = if($tokenResult.Token -is [Security.SecureString]){ ConvertTo-PlainTextFromSecureString -SecureString $tokenResult.Token } else { [string]$tokenResult.Token }; if([string]::IsNullOrWhiteSpace($token)){ throw 'Get-AzAccessToken returned an empty access token.' }; @{ Authorization = ('Bearer ' + $token) } }
 
-function ConvertTo-HeaderHashtable { [CmdletBinding()] param([AllowNull()][object]$HeaderObject) $table=@{}; if($null -eq $HeaderObject){return $table}; if($HeaderObject -is [Collections.IDictionary]){ foreach($key in $HeaderObject.Keys){ $value=$HeaderObject[$key]; $table[[string]$key] = if($value -is [Array]){ [string]($value -join ',') } else { [string]$value } } } else { foreach($property in $HeaderObject.PSObject.Properties){ $table[$property.Name] = [string]$property.Value } }; $table }
+# Invoke-AzRestMethod returns HttpResponseHeaders and Windows PowerShell returns WebHeaderCollection.
+# Neither implements IDictionary, so both must be enumerated explicitly or every x-ms-* header is lost.
+function ConvertTo-HeaderHashtable { [CmdletBinding()] param([AllowNull()][object]$HeaderObject) $table=@{}; if($null -eq $HeaderObject){return $table}; if($HeaderObject -is [Collections.IDictionary]){ foreach($key in $HeaderObject.Keys){ $value=$HeaderObject[$key]; $table[[string]$key] = if($value -is [Array]){ [string]($value -join ',') } else { [string]$value } }; return $table }; if($HeaderObject -is [Collections.Specialized.NameValueCollection]){ foreach($key in $HeaderObject.AllKeys){ if($null -ne $key){ $table[[string]$key] = [string]$HeaderObject[[string]$key] } }; return $table }; if($HeaderObject -is [Collections.IEnumerable]){ $matchedPairs=$false; foreach($header in $HeaderObject){ if($null -ne $header -and $header.PSObject.Properties['Key'] -and $header.PSObject.Properties['Value']){ $matchedPairs=$true; $table[[string]$header.Key] = [string](@($header.Value) -join ',') } }; if($matchedPairs){ return $table } }; foreach($property in $HeaderObject.PSObject.Properties){ $table[$property.Name] = [string]$property.Value }; $table }
 function Get-HeaderValue { [CmdletBinding()] param([Parameter(Mandatory=$true)][hashtable]$Headers,[Parameter(Mandatory=$true)][string]$Name) foreach($key in $Headers.Keys){ if([string]::Equals([string]$key,$Name,[StringComparison]::OrdinalIgnoreCase)){ return [string]$Headers[$key] } }; $null }
 function Get-ArmResponseIdentifiers { [CmdletBinding()] param([Parameter(Mandatory=$true)][hashtable]$Headers) $correlationId=$null; foreach($name in $script:Configuration.CorrelationHeaderNames){ $correlationId=Get-HeaderValue -Headers $Headers -Name $name; if($correlationId){break} }; $requestId=$null; foreach($name in $script:Configuration.RequestHeaderNames){ $requestId=Get-HeaderValue -Headers $Headers -Name $name; if($requestId){break} }; [pscustomobject]@{ CorrelationId=$correlationId; RequestId=$requestId } }
 function ConvertTo-ArmResponseObject { [CmdletBinding()] param([Parameter(Mandatory=$true)][object]$Response,[Parameter(Mandatory=$true)][string]$MethodName,[Parameter(Mandatory=$true)][System.Uri]$RequestUri) $headers=ConvertTo-HeaderHashtable -HeaderObject $Response.Headers; $ids=Get-ArmResponseIdentifiers -Headers $headers; [pscustomobject]@{ StatusCode=[int]$Response.StatusCode; Headers=$headers; Content=[string]$Response.Content; Method=$MethodName; RequestUri=[string]$RequestUri; CorrelationId=$ids.CorrelationId; RequestId=$ids.RequestId; IsSuccessStatus=(([int]$Response.StatusCode -ge 200) -and ([int]$Response.StatusCode -lt 300)) } }
 
 function Read-HttpErrorResponse {
-    [CmdletBinding()] param([Parameter(Mandatory=$true)][Exception]$Exception,[Parameter(Mandatory=$true)][string]$MethodName,[Parameter(Mandatory=$true)][System.Uri]$RequestUri)
+    [CmdletBinding()] param([Parameter(Mandatory=$true)][Exception]$Exception,[Parameter(Mandatory=$true)][string]$MethodName,[Parameter(Mandatory=$true)][System.Uri]$RequestUri,[AllowNull()][string]$ErrorBody)
     $webResponse = if($Exception.PSObject.Properties['Response']) { $Exception.Response } else { $null }
     if ($null -eq $webResponse) { throw $Exception }
-    $content=''; try { $stream=$webResponse.GetResponseStream(); if($stream){ $reader=[IO.StreamReader]::new($stream); try { $content=$reader.ReadToEnd() } finally { $reader.Dispose(); $stream.Dispose() } } } catch { $content=$Exception.Message }
-    $response=[pscustomobject]@{ StatusCode=[int]$webResponse.StatusCode; Headers=ConvertTo-HeaderHashtable -HeaderObject $webResponse.Headers; Content=$content }
+    # Windows PowerShell surfaces HttpWebResponse (GetResponseStream) while PowerShell 7 surfaces
+    # HttpResponseMessage, so read the body from whichever shape this runtime produced.
+    $content = [string]$ErrorBody
+    if ([string]::IsNullOrWhiteSpace($content)) {
+        try {
+            if ($webResponse.PSObject.Methods['GetResponseStream']) { $stream=$webResponse.GetResponseStream(); if($stream){ $reader=[IO.StreamReader]::new($stream); try { $content=$reader.ReadToEnd() } finally { $reader.Dispose(); $stream.Dispose() } } }
+            elseif ($webResponse.PSObject.Properties['Content'] -and $null -ne $webResponse.Content) { $content = if($webResponse.Content -is [string]){ [string]$webResponse.Content } else { [string]$webResponse.Content.ReadAsStringAsync().GetAwaiter().GetResult() } }
+        } catch { $content='' }
+    }
+    if ([string]::IsNullOrWhiteSpace($content)) { $content=$Exception.Message }
+    $statusCode = if($webResponse.PSObject.Properties['StatusCode']){ [int]$webResponse.StatusCode } else { 0 }
+    $responseHeaders = if($webResponse.PSObject.Properties['Headers']){ ConvertTo-HeaderHashtable -HeaderObject $webResponse.Headers } else { @{} }
+    $response=[pscustomobject]@{ StatusCode=$statusCode; Headers=$responseHeaders; Content=$content }
     ConvertTo-ArmResponseObject -Response $response -MethodName $MethodName -RequestUri $RequestUri
 }
 
 function Get-ArmErrorDetails {
     [CmdletBinding()] param([Parameter(Mandatory=$true)][pscustomobject]$Response)
     $parsed=$null; try { if(-not [string]::IsNullOrWhiteSpace($Response.Content)){ $parsed=$Response.Content | ConvertFrom-Json -ErrorAction Stop } } catch { $parsed=$null }
-    $errorObject = if($parsed -and $parsed.error){ $parsed.error } else { $parsed }
-    $codeProperty = $null
-    $messageProperty = $null
-    $targetProperty = $null
-    $detailsProperty = $null
-    if ($errorObject) {
-        if ($errorObject -is [Collections.IDictionary]) {
-            if ($errorObject.Contains('code')) { $codeProperty = $errorObject['code'] }
-            if ($errorObject.Contains('message')) { $messageProperty = $errorObject['message'] }
-            if ($errorObject.Contains('target')) { $targetProperty = $errorObject['target'] }
-            if ($errorObject.Contains('details')) { $detailsProperty = $errorObject['details'] }
-        } else {
-            $codeProperty = $errorObject.PSObject.Properties['code']
-            $messageProperty = $errorObject.PSObject.Properties['message']
-            $targetProperty = $errorObject.PSObject.Properties['target']
-            $detailsProperty = $errorObject.PSObject.Properties['details']
-        }
-    }
-    function Resolve-ArmErrorPropertyValue {
-        [CmdletBinding()] param([AllowNull()][object]$Property,[switch]$AsString)
-        if (-not $Property) { return $null }
-        $value = if($Property -is [Management.Automation.PSPropertyInfo]){ $Property.Value } else { $Property }
-        if ($AsString) { return [string]$value }
-        $value
-    }
-    $codeValue = Resolve-ArmErrorPropertyValue -Property $codeProperty -AsString
-    $messageValue = Resolve-ArmErrorPropertyValue -Property $messageProperty -AsString
-    $targetValue = Resolve-ArmErrorPropertyValue -Property $targetProperty -AsString
-    $detailsValue = Resolve-ArmErrorPropertyValue -Property $detailsProperty
+    # Some ARM and resource-provider failures return a bare payload with no top-level 'error' wrapper.
+    $nestedError = Get-ObjectMemberValueSafe -InputObject $parsed -Name 'error'
+    $errorObject = if($null -ne $nestedError){ $nestedError } else { $parsed }
+    $messageValue = [string](Get-ObjectMemberValueSafe -InputObject $errorObject -Name 'message')
     [pscustomobject]@{
-        Code = $codeValue
+        Code = [string](Get-ObjectMemberValueSafe -InputObject $errorObject -Name 'code')
         Message = if ($messageValue) { $messageValue } else { Redact-SensitiveText -Text $Response.Content }
-        Target = $targetValue
-        Details = $detailsValue
+        Target = [string](Get-ObjectMemberValueSafe -InputObject $errorObject -Name 'target')
+        Details = Get-ObjectMemberValueSafe -InputObject $errorObject -Name 'details'
         CorrelationId = $Response.CorrelationId
         RequestId = $Response.RequestId
     }
+}
+
+function Test-ArmTransientStatus {
+    [CmdletBinding()] param([Parameter(Mandatory=$true)][int]$StatusCode,[Parameter(Mandatory=$true)][string]$RequestMethod)
+    # 408/429 mean ARM rejected the request without processing it, so any method may be replayed.
+    if($script:Configuration.RetryAnyMethodStatusCodes -contains $StatusCode){ return $true }
+    # A 5xx leaves the server-side effect ambiguous, so only replay idempotent methods. Replaying a
+    # POST action endpoint such as initiateVerification could trigger the action a second time.
+    ($script:Configuration.RetryIdempotentStatusCodes -contains $StatusCode) -and ($script:Configuration.IdempotentHttpMethods -contains $RequestMethod)
+}
+
+function Get-ArmRetryDelaySeconds {
+    [CmdletBinding()] param([Parameter(Mandatory=$true)][hashtable]$Headers,[Parameter(Mandatory=$true)][int]$AttemptNumber)
+    $maxDelaySeconds=[int]$script:Configuration.RetryMaxDelaySeconds
+    $retryAfterValue=Get-HeaderValue -Headers $Headers -Name 'Retry-After'
+    # ARM sends Retry-After as delta-seconds and discards requests replayed before it elapses, so a
+    # value above the cap returns -1 (stop retrying) rather than clamping and retrying too early.
+    if($retryAfterValue -match '^\s*(\d{1,9})\s*$'){ $requestedSeconds=[int]$Matches[1]; if($requestedSeconds -gt $maxDelaySeconds){ return -1 }; return [Math]::Max($requestedSeconds,1) }
+    [Math]::Min([int][Math]::Pow(2,($AttemptNumber-1)),$maxDelaySeconds)
 }
 
 function Invoke-ArmRequestCore {
@@ -969,30 +1038,42 @@ function Invoke-ArmRequestCore {
     Write-Log -Level 'INFO' -Message ("Invoking ARM request: {0} {1}" -f $RequestMethod,$RequestInfo.Uri.AbsoluteUri)
     if($ValidatedHeaders.Count -gt 0){ Write-Log -Level 'DEBUG' -Message 'Custom ARM headers were supplied.' -Data $ValidatedHeaders }
     if($Payload){ Write-Log -Level 'DEBUG' -Message 'ARM request payload prepared.' -Data $Payload }
-    $response=$null; $manualHeaders=($ValidatedHeaders.Count -gt 0)
-    if(-not $manualHeaders){
-        # Use the Az cmdlet path whenever no extra caller headers are needed.
-        try {
-            $params=@{ Method=$RequestMethod; ErrorAction='Stop' }
-            if($Payload){ $params['Payload']=$Payload }
-            if($RequestInfo.Mode -eq 'Path'){ $params['Path']=$RequestInfo.Path } else { $params['Uri']=$RequestInfo.Uri }
-            $azResponse=Invoke-AzRestMethod @params
-            $response=ConvertTo-ArmResponseObject -Response $azResponse -MethodName $RequestMethod -RequestUri $RequestInfo.Uri
-        } catch {
-            if($_.Exception.PSObject.Properties['Response'] -and $_.Exception.Response){ $response=Read-HttpErrorResponse -Exception $_.Exception -MethodName $RequestMethod -RequestUri $RequestInfo.Uri } else { throw }
+    $response=$null; $manualHeaders=($ValidatedHeaders.Count -gt 0); $maxAttempts=[Math]::Max(1,[int]$script:Configuration.RetryMaxAttempts); $attempt=0
+    while($true){
+        $attempt++
+        if(-not $manualHeaders){
+            # Use the Az cmdlet path whenever no extra caller headers are needed.
+            try {
+                $params=@{ Method=$RequestMethod; ErrorAction='Stop' }
+                if($Payload){ $params['Payload']=$Payload }
+                if($RequestInfo.Mode -eq 'Path'){ $params['Path']=$RequestInfo.Path } else { $params['Uri']=$RequestInfo.Uri }
+                $azResponse=Invoke-AzRestMethod @params
+                $response=ConvertTo-ArmResponseObject -Response $azResponse -MethodName $RequestMethod -RequestUri $RequestInfo.Uri
+            } catch {
+                if($_.Exception.PSObject.Properties['Response'] -and $_.Exception.Response){ $response=Read-HttpErrorResponse -Exception $_.Exception -MethodName $RequestMethod -RequestUri $RequestInfo.Uri } else { throw }
+            }
+        } else {
+            # Fall back to Invoke-WebRequest when custom headers are required so the
+            # script can merge caller headers with an Az-issued bearer token.
+            $authHeader=Get-AuthorizationHeaderFromAzContext -ResourceUrl $RequestInfo.ResourceManagerUrl; $webHeaders=@{}; foreach($entry in $authHeader.GetEnumerator()){ $webHeaders[$entry.Key]=$entry.Value }; foreach($entry in $ValidatedHeaders.GetEnumerator()){ $webHeaders[$entry.Key]=$entry.Value }
+            try {
+                $params=@{ Uri=$RequestInfo.Uri.AbsoluteUri; Method=$RequestMethod; Headers=$webHeaders; ErrorAction='Stop' }
+                if($Payload){ $params['Body']=$Payload; $params['ContentType']='application/json' }
+                if($PSVersionTable.PSVersion.Major -lt 6){ $params['UseBasicParsing']=$true }
+                $webResponse=Invoke-WebRequest @params
+                $temp=[pscustomobject]@{ StatusCode=[int]$webResponse.StatusCode; Headers=ConvertTo-HeaderHashtable -HeaderObject $webResponse.Headers; Content=[string]$webResponse.Content }
+                $response=ConvertTo-ArmResponseObject -Response $temp -MethodName $RequestMethod -RequestUri $RequestInfo.Uri
+            } catch { $response=Read-HttpErrorResponse -Exception $_.Exception -MethodName $RequestMethod -RequestUri $RequestInfo.Uri } finally { if($webHeaders.ContainsKey('Authorization')){ $webHeaders['Authorization']='[REDACTED]' } }
         }
-    } else {
-        # Fall back to Invoke-WebRequest when custom headers are required so the
-        # script can merge caller headers with an Az-issued bearer token.
-        $authHeader=Get-AuthorizationHeaderFromAzContext -ResourceUrl $RequestInfo.ResourceManagerUrl; $webHeaders=@{}; foreach($entry in $authHeader.GetEnumerator()){ $webHeaders[$entry.Key]=$entry.Value }; foreach($entry in $ValidatedHeaders.GetEnumerator()){ $webHeaders[$entry.Key]=$entry.Value }
-        try {
-            $params=@{ Uri=$RequestInfo.Uri.AbsoluteUri; Method=$RequestMethod; Headers=$webHeaders; ErrorAction='Stop' }
-            if($Payload){ $params['Body']=$Payload; $params['ContentType']='application/json' }
-            if($PSVersionTable.PSVersion.Major -lt 6){ $params['UseBasicParsing']=$true }
-            $webResponse=Invoke-WebRequest @params
-            $temp=[pscustomobject]@{ StatusCode=[int]$webResponse.StatusCode; Headers=ConvertTo-HeaderHashtable -HeaderObject $webResponse.Headers; Content=[string]$webResponse.Content }
-            $response=ConvertTo-ArmResponseObject -Response $temp -MethodName $RequestMethod -RequestUri $RequestInfo.Uri
-        } catch { $response=Read-HttpErrorResponse -Exception $_.Exception -MethodName $RequestMethod -RequestUri $RequestInfo.Uri } finally { if($webHeaders.ContainsKey('Authorization')){ $webHeaders['Authorization']='[REDACTED]' } }
+        # Retry before the -ReturnErrorResponse check below so the long-running operation poller,
+        # which aborts on any non-success poll, survives a throttled or transient status. Its
+        # expected 404 is unaffected because 404 is not a retryable status.
+        if($response.IsSuccessStatus -or $attempt -ge $maxAttempts){ break }
+        if(-not (Test-ArmTransientStatus -StatusCode $response.StatusCode -RequestMethod $RequestMethod)){ break }
+        $delaySeconds=Get-ArmRetryDelaySeconds -Headers $response.Headers -AttemptNumber $attempt
+        if($delaySeconds -lt 0){ Write-Log -Level 'WARN' -Message ('ARM returned StatusCode={0} with a Retry-After longer than the {1} second retry cap. Not retrying.' -f $response.StatusCode,$script:Configuration.RetryMaxDelaySeconds); break }
+        Write-Log -Level 'WARN' -Message ('Transient ARM failure. StatusCode={0}. Retrying in {1} second(s) (attempt {2} of {3}).' -f $response.StatusCode,$delaySeconds,($attempt+1),$maxAttempts)
+        Start-Sleep -Seconds $delaySeconds
     }
     if($response.CorrelationId -or $response.RequestId){ Write-Log -Level 'INFO' -Message ('ARM response received. StatusCode={0}; CorrelationId={1}; RequestId={2}' -f $response.StatusCode,$response.CorrelationId,$response.RequestId) } else { Write-Log -Level 'INFO' -Message ('ARM response received. StatusCode={0}' -f $response.StatusCode) }
     # Callers such as the long-running operation poller pass -ReturnErrorResponse
@@ -1002,7 +1083,7 @@ function Invoke-ArmRequestCore {
     $response
 }
 
-function Get-LongRunningOperationState { [CmdletBinding()] param([Parameter(Mandatory=$true)][pscustomobject]$Response) $status=$null; try { if(-not [string]::IsNullOrWhiteSpace($Response.Content)){ $contentObject=$Response.Content | ConvertFrom-Json -ErrorAction Stop; if($contentObject.status){$status=[string]$contentObject.status}elseif($contentObject.properties -and $contentObject.properties.provisioningState){$status=[string]$contentObject.properties.provisioningState} } } catch { $status=$null }; if($status){return $status}; if($Response.StatusCode -in 200,201,204){'Succeeded'} else {'InProgress'} }
+function Get-LongRunningOperationState { [CmdletBinding()] param([Parameter(Mandatory=$true)][pscustomobject]$Response) $status=$null; try { if(-not [string]::IsNullOrWhiteSpace($Response.Content)){ $contentObject=$Response.Content | ConvertFrom-Json -ErrorAction Stop; $statusValue=Get-ObjectMemberValueSafe -InputObject $contentObject -Name 'status'; if(-not $statusValue){ $statusValue=Get-ObjectMemberValueSafe -InputObject (Get-ObjectMemberValueSafe -InputObject $contentObject -Name 'properties') -Name 'provisioningState' }; if($statusValue){ $status=[string]$statusValue } } } catch { $status=$null }; if($status){return $status}; if($Response.StatusCode -in 200,201,204){'Succeeded'} else {'InProgress'} }
 
 function Wait-ArmLongRunningOperation {
     [CmdletBinding()] param([Parameter(Mandatory=$true)][pscustomobject]$InitialResponse,[Parameter(Mandatory=$true)][pscustomobject]$InitialRequestInfo,[Parameter(Mandatory=$true)][string]$InitialMethod,[Parameter(Mandatory=$true)][hashtable]$ValidatedHeaders)
@@ -1010,12 +1091,22 @@ function Wait-ArmLongRunningOperation {
     # headers. If neither header exists, the first response is already final.
     $asyncUri = Get-HeaderValue -Headers $InitialResponse.Headers -Name 'Azure-AsyncOperation'; if(-not $asyncUri){ $asyncUri = Get-HeaderValue -Headers $InitialResponse.Headers -Name 'Operation-Location' }
     $locationUri = Get-HeaderValue -Headers $InitialResponse.Headers -Name 'Location'; if(-not $asyncUri -and -not $locationUri){ return $InitialResponse }
-    $pollUri = if($asyncUri){$asyncUri}else{$locationUri}; $deadline=(Get-Date).AddSeconds($script:Configuration.LongRunningTimeoutSeconds); $latestResponse=$InitialResponse
+    # The header may be relative, and it selects a URI that will receive an ARM access token, so resolve
+    # it against the original request and confirm it still targets the Resource Manager host.
+    $pollHeaderValue = if($asyncUri){$asyncUri}else{$locationUri}
+    $pollUri = Resolve-ArmPollingUri -HeaderValue $pollHeaderValue -BaseUri $InitialRequestInfo.Uri -ResourceManagerUrl $InitialRequestInfo.ResourceManagerUrl
+    if($NoWait){ Write-Log -Level 'INFO' -Message ("NoWait was specified, so the operation was not polled. Track it at '{0}'." -f $pollUri.AbsoluteUri); return $InitialResponse }
+    $timeoutSeconds=[int]$script:Configuration.LongRunningTimeoutSeconds; $hasDeadline=($timeoutSeconds -gt 0); $deadline = if($hasDeadline){(Get-Date).AddSeconds($timeoutSeconds)}else{[datetime]::MaxValue}
+    $pollFloorSeconds=[Math]::Max(1,[int]$script:Configuration.DefaultPollIntervalSeconds); $pollCeilingSeconds=[Math]::Max($pollFloorSeconds,[int]$script:Configuration.MaxPollIntervalSeconds); $backoffSeconds=$pollFloorSeconds; $latestResponse=$InitialResponse
     while((Get-Date) -lt $deadline){
-        # Honor Retry-After when present so polling remains service-friendly.
-        $retryAfterValue = Get-HeaderValue -Headers $latestResponse.Headers -Name 'Retry-After'; $delaySeconds = if($retryAfterValue -and ($retryAfterValue -as [int])){ [int]$retryAfterValue } else { $script:Configuration.DefaultPollIntervalSeconds }; if($delaySeconds -lt 1){$delaySeconds=$script:Configuration.DefaultPollIntervalSeconds}
+        # Retry-After wins when the service sends it. Otherwise back off from the floor to the ceiling so a
+        # long operation costs tens of polls instead of hundreds. The digit bound keeps the cast from overflowing.
+        $retryAfterValue = Get-HeaderValue -Headers $latestResponse.Headers -Name 'Retry-After'
+        if($retryAfterValue -match '^\s*(\d{1,9})\s*$'){ $delaySeconds=[Math]::Max(1,[int]$Matches[1]) } else { $delaySeconds=$backoffSeconds; $backoffSeconds=[Math]::Min(($backoffSeconds*2),$pollCeilingSeconds) }
+        # Retry-After is server-controlled and otherwise unbounded, so never sleep past the deadline.
+        if($hasDeadline){ $remainingSeconds=[int][Math]::Floor(($deadline - (Get-Date)).TotalSeconds); if($remainingSeconds -le 0){ break }; if($delaySeconds -gt $remainingSeconds){ $delaySeconds=$remainingSeconds } }
         Write-Log -Level 'INFO' -Message ("Polling long-running ARM operation in {0} second(s)." -f $delaySeconds); Start-Sleep -Seconds $delaySeconds
-        $pollRequestInfo=[pscustomobject]@{ Mode='Uri'; Uri=[System.Uri]$pollUri; Path=([System.Uri]$pollUri).PathAndQuery; ResourceManagerUrl=$InitialRequestInfo.ResourceManagerUrl }
+        $pollRequestInfo=[pscustomobject]@{ Mode='Uri'; Uri=$pollUri; Path=$pollUri.PathAndQuery; ResourceManagerUrl=$InitialRequestInfo.ResourceManagerUrl }
         $latestResponse=Get-LastPipelineValueSafe -Values @(Invoke-ArmRequestCore -RequestMethod 'GET' -RequestInfo $pollRequestInfo -Payload $null -ValidatedHeaders $ValidatedHeaders -ReturnErrorResponse)
         if(-not $latestResponse.IsSuccessStatus){
             # ACS/Communication action endpoints (initiateVerification/cancelVerification)
@@ -1038,7 +1129,7 @@ function Wait-ArmLongRunningOperation {
             default { continue }
         }
     }
-    throw "Long-running ARM operation did not complete within $($script:Configuration.LongRunningTimeoutSeconds) seconds."
+    throw "Long-running ARM operation did not complete within $timeoutSeconds seconds. The operation is still running in Azure. Track it with GET '$pollUri', or raise -LongRunningTimeoutSeconds (0 waits indefinitely)."
 }
 function Format-ArmResponse { [CmdletBinding()] param([Parameter(Mandatory=$true)][pscustomobject]$Response) if($RawOutput){ return [string]$Response.Content }; if([string]::IsNullOrWhiteSpace($Response.Content)){ return '' }; try { ($Response.Content | ConvertFrom-Json -ErrorAction Stop | ConvertTo-Json -Depth $script:Configuration.DefaultJsonDepth) } catch { [string]$Response.Content } }
 function Save-ArmResponse { [CmdletBinding()] param([Parameter(Mandatory=$true)][string]$FormattedContent) if(-not $OutputFile){ return }; $resolved=if([IO.Path]::IsPathRooted($OutputFile)){$OutputFile}else{ Join-Path $script:SessionState.OutputPath $OutputFile }; Ensure-Directory -Path (Split-Path $resolved -Parent); Set-Content -LiteralPath $resolved -Value $FormattedContent -Encoding UTF8; Write-Log -Level 'INFO' -Message "Saved ARM response content to '$resolved'." }
@@ -1047,7 +1138,8 @@ function Clear-ArmClientPsContext { [CmdletBinding()] param() try { Clear-AzCont
 function Show-BundledModuleVersionSummary {
     [CmdletBinding()] param()
     $manifest = Get-VersionsManifestSafe
-    if ($manifest -and $manifest.modules) { Write-Output ($manifest.modules | Sort-Object name,version | ConvertTo-Json -Depth 10); return }
+    $manifestModules = @(Get-ObjectMemberValueSafe -InputObject $manifest -Name 'modules')
+    if ($manifestModules.Count -gt 0) { Write-Output ($manifestModules | Sort-Object name,version | ConvertTo-Json -Depth 10); return }
     $inventory = @(Get-ChildItem -LiteralPath $script:SessionState.ModulesPath -Recurse -Filter '*.psd1' -File | ForEach-Object { $data=Import-ModuleManifestDataSafe -ManifestPath $_.FullName; if($data){ $rootModule=Get-ManifestValueSafe -ManifestData $data -Name 'RootModule'; $moduleVersion=Get-ManifestValueSafe -ManifestData $data -Name 'ModuleVersion'; [pscustomobject]@{ Name=if($rootModule){ [IO.Path]::GetFileNameWithoutExtension([string]$rootModule) } else { [IO.Path]::GetFileNameWithoutExtension($_.Name) }; Version=[string]$moduleVersion; Manifest=$_.FullName; ModuleBase=$_.Directory.FullName } } })
     Write-Output ($inventory | Sort-Object Name,Version | ConvertTo-Json -Depth 10)
 }
@@ -1127,25 +1219,26 @@ try {
     if ($ShowOperationDetails -and -not $Operation) { throw 'ShowOperationDetails requires Operation.' }
     Initialize-Environment
     $isRequest = ($PSBoundParameters.ContainsKey('Uri') -or $PSBoundParameters.ContainsKey('RelativePath') -or ($Operation -and -not $ListOperations -and -not $ShowOperationDetails -and -not $ApiVersions))
-    $requiresImportedModules = $ShowContext -or $ApiVersions -or $SelfTest -or $isRequest -or ((-not $ToolVersion) -and (-not $ListOperations) -and (-not $ShowOperationDetails) -and (-not $ShowBundledModuleVersions) -and (-not $ShowResolvedModuleVersions))
+    # With no action switch at all the tool authenticates and prints the resolved context.
+    $showContextByDefault = ((-not $ShowContext) -and (-not $isRequest) -and (-not $SelfTest) -and (-not $ToolVersion) -and (-not $ShowBundledModuleVersions) -and (-not $ShowResolvedModuleVersions) -and (-not $ListOperations) -and (-not $ShowOperationDetails) -and (-not $ApiVersions))
+    $requiresImportedModules = $ShowContext -or $ApiVersions -or $SelfTest -or $isRequest -or $showContextByDefault
     if ($ToolVersion) { Write-Output $script:Configuration.Version }
     if ($ListOperations) { Show-ArmOperationPresetCatalog }
     if ($ShowBundledModuleVersions) { Show-BundledModuleVersionSummary }
     if ($ShowResolvedModuleVersions) { Show-ResolvedModuleVersionSummary }
-    if ($ShowOperationDetails -and -not $ApiVersions) { Show-ArmOperationPresetDetails -Name $Operation }
+    # Emit preset details up front only when nothing later in the run will emit them again.
+    $showOperationDetailsEarly = ($ShowOperationDetails -and -not $requiresImportedModules)
+    if ($showOperationDetailsEarly) { Show-ArmOperationPresetDetails -Name $Operation }
     if (-not $requiresImportedModules) { $completedSuccessfully = $true; return }
     Import-BundledModules | Out-Null
     Initialize-AzProcessSecurity
     Test-AuthenticodeIfRequested -Paths @($script:ScriptPath)
-    $utilityActionSelected = ($ToolVersion -or $ShowBundledModuleVersions -or $ShowResolvedModuleVersions -or $SelfTest -or $ListOperations -or $ShowOperationDetails -or $ApiVersions)
-    $requiresAuthentication = $ShowContext -or $isRequest -or $ApiVersions -or (-not $utilityActionSelected)
+    $requiresAuthentication = $ShowContext -or $isRequest -or $ApiVersions -or $showContextByDefault
     if ($requiresAuthentication) {
         $context = Get-LastPipelineValueSafe -Values @(Connect-ArmClientPs)
-        if ($ShowContext -or ((-not $isRequest) -and (-not $SelfTest) -and (-not $ShowBundledModuleVersions) -and (-not $ShowResolvedModuleVersions) -and (-not $ListOperations) -and (-not $ShowOperationDetails) -and (-not $ApiVersions))) {
-            Write-Output ($context | ConvertTo-Json -Depth 10)
-        }
+        if ($ShowContext -or $showContextByDefault) { Write-Output ($context | ConvertTo-Json -Depth 10) }
     }
-    if ($ShowOperationDetails) { Show-ArmOperationPresetDetails -Name $Operation -IncludeApiVersions:$ApiVersions }
+    if ($ShowOperationDetails -and -not $showOperationDetailsEarly) { Show-ArmOperationPresetDetails -Name $Operation -IncludeApiVersions:$ApiVersions }
     elseif ($ApiVersions) { Show-ArmOperationApiVersions -Name $Operation }
     if ($SelfTest) { Invoke-ArmClientSelfTest }
     if ($isRequest) { Invoke-ArmRequest }

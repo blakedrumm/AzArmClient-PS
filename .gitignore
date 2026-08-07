@@ -1,17 +1,17 @@
 # Build output
-dist/
-*.zip
+/dist/
+/*.zip
 
 # PowerShell module cache
-PSModuleCache/
+/PSModuleCache/
 
 # Log files
 *.log
-logs/
-Logs/
+/logs/
+/Logs/
 
 # Runtime output
-Output/
+/Output/
 
 # Editor artifacts
 .vscode/
@@ -28,6 +28,13 @@ Thumbs.db
 *.pem
 *.key
 secrets.json
+
+# Modules/ and Manifest/ are hashed into Manifest/Files.sha256.json with
+# required=true, so anything ignored here fails hash validation on a fresh
+# clone. Keep these negations last so they override every pattern above.
+!Modules/**
+!Manifest/**
+
 /.vs/CopilotSnapshots/73CF52B59B771946AE7A9A810E6FBB62
 /.vs/AzArmClient-PS.slnx/v18
 /.vs/AzArmClient-PS.slnx/FileContentIndex

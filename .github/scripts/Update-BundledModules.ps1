@@ -79,6 +79,86 @@ function Initialize-PSGalleryRepository {
     }
 }
 
+function Get-VersionTokenMatch {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory=$true)][string]$Content,
+        [Parameter(Mandatory=$true)][string]$Pattern,
+        [Parameter(Mandatory=$true)][string]$Description
+    )
+
+    # PowerShell's -replace silently returns the input unchanged when its anchor
+    # stops matching, which let a half-applied version bump reach the commit step.
+    # Requiring exactly one match turns anchor drift into a failed run instead.
+    $found = [regex]::Matches($Content, $Pattern, [Text.RegularExpressions.RegexOptions]::Multiline)
+    if ($found.Count -ne 1) {
+        throw "Expected exactly one '$Description' site but found $($found.Count). The Update-BundledModules.ps1 anchor no longer matches the target file."
+    }
+    $found[0].Groups['value']
+}
+
+function Get-VersionToken {
+    [CmdletBinding()]
+    [OutputType([string])]
+    param(
+        [Parameter(Mandatory=$true)][string]$Content,
+        [Parameter(Mandatory=$true)][string]$Pattern,
+        [Parameter(Mandatory=$true)][string]$Description
+    )
+
+    (Get-VersionTokenMatch -Content $Content -Pattern $Pattern -Description $Description).Value
+}
+
+function Set-VersionToken {
+    [CmdletBinding()]
+    [OutputType([string])]
+    param(
+        [Parameter(Mandatory=$true)][string]$Content,
+        [Parameter(Mandatory=$true)][string]$Pattern,
+        [Parameter(Mandatory=$true)][string]$NewValue,
+        [Parameter(Mandatory=$true)][string]$Description
+    )
+
+    # Rewrite only the captured span so no replacement-string escaping is involved.
+    $value = Get-VersionTokenMatch -Content $Content -Pattern $Pattern -Description $Description
+    $Content.Remove($value.Index, $value.Length).Insert($value.Index, $NewValue)
+}
+
+function Write-GitHubOutput {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory=$true)][ValidatePattern('^[A-Za-z_][A-Za-z0-9_]*$')][string]$Name,
+        [Parameter(Mandatory=$true)][AllowEmptyString()][string]$Value
+    )
+
+    # Values derive from PowerShell Gallery metadata. A bare "name=value" line lets
+    # an embedded newline forge extra step outputs, so use the delimited form with
+    # a delimiter that cannot appear in the value.
+    if ([string]::IsNullOrWhiteSpace($env:GITHUB_OUTPUT)) { return }
+
+    $normalized = $Value.Replace("`r`n", "`n").Replace("`r", "`n")
+    do { $delimiter = 'ghadelimiter_{0}' -f [guid]::NewGuid().ToString('N') }
+    while (($normalized -split "`n") -ccontains $delimiter)
+
+    $record = "$Name<<$delimiter`n$normalized`n$delimiter`n"
+    [IO.File]::AppendAllText($env:GITHUB_OUTPUT, $record, [Text.UTF8Encoding]::new($false))
+}
+
+# Every file-based site that must carry the tool version. The bump and the
+# post-build assertion both read this list so a site cannot be added to one only.
+$versionSites = @(
+    [pscustomobject]@{ Name='Build-BundledModules.ps1 -ToolVersion default';  Script='build'; Pattern="\[string\]\`$ToolVersion\s*=\s*'(?<value>[^']+)'" }
+    [pscustomobject]@{ Name='Build-BundledModules.ps1 header';                Script='build'; Pattern="^Version:[ \t]+(?<value>\S+)" }
+    [pscustomobject]@{ Name='Build-BundledModules.ps1 Configuration.Version'; Script='build'; Pattern="\`$script:Configuration\s*=\s*\[ordered\]@\{[\s\S]*?^\s*Version\s*=\s*'(?<value>[^']+)'" }
+    [pscustomobject]@{ Name='ArmClient-PS.ps1 header';                        Script='main';  Pattern="^Version:[ \t]+(?<value>\S+)" }
+    [pscustomobject]@{ Name='ArmClient-PS.ps1 Configuration.Version';         Script='main';  Pattern="\`$script:Configuration\s*=\s*\[ordered\]@\{[\s\S]*?^\s*Version\s*=\s*'(?<value>[^']+)'" }
+)
+
+$dateSites = @(
+    [pscustomobject]@{ Name='Build-BundledModules.ps1 Last Updated Date'; Script='build'; Pattern="^Last Updated Date:[ \t]+(?<value>\S+)" }
+    [pscustomobject]@{ Name='ArmClient-PS.ps1 Last Updated Date';         Script='main';  Pattern="^Last Updated Date:[ \t]+(?<value>\S+)" }
+)
+
 # ---------------------------------------------------------------------------
 # 1. Parse current pinned modules from Build-BundledModules.ps1
 # ---------------------------------------------------------------------------
@@ -133,9 +213,7 @@ if ($updates.Count -eq 0) {
     Write-Output ''
     Write-Output '=== All modules are up to date. No changes needed. ==='
     # Signal to the workflow that no commit is required.
-    if ($env:GITHUB_OUTPUT) {
-        Add-Content -LiteralPath $env:GITHUB_OUTPUT -Value 'has_updates=false'
-    }
+    Write-GitHubOutput -Name 'has_updates' -Value 'false'
     exit 0
 }
 
@@ -161,63 +239,41 @@ foreach ($update in $updates) {
 Write-Output ''
 Write-Output '--- Bumping tool version ---'
 
-# Read current tool version from Versions.json (authoritative source).
-$currentToolVersion = '1.0.0'
-if (Test-Path -LiteralPath $versionsManifest -PathType Leaf) {
-    $versionsData = Get-Content -LiteralPath $versionsManifest -Raw | ConvertFrom-Json
-    $currentToolVersion = $versionsData.tool.version
+# Read current tool version from Versions.json (authoritative source). A missing
+# manifest previously defaulted to 1.0.0, which would silently rewind the version.
+if (-not (Test-Path -LiteralPath $versionsManifest -PathType Leaf)) {
+    throw "Versions manifest not found at '$versionsManifest'. Build the package before running the update job."
 }
+$versionsData = Get-Content -LiteralPath $versionsManifest -Raw | ConvertFrom-Json
+$currentToolVersion = [string]$versionsData.tool.version
 
 # The maintenance workflow treats a module refresh as a patch-level tool change
 # because the packaged contents changed even when the script interface did not.
-$versionParts = $currentToolVersion.Split('.')
-$major = [int]$versionParts[0]
-$minor = [int]$versionParts[1]
-$patch = [int]$versionParts[2]
-$patch++
-$newToolVersion = "$major.$minor.$patch"
+# release.yml tolerates semver prerelease suffixes, but incrementing one has no
+# defensible unattended meaning, so require a plain three-part version here.
+$versionMatch = [regex]::Match($currentToolVersion, '^(\d+)\.(\d+)\.(\d+)$')
+if (-not $versionMatch.Success) {
+    throw "Tool version '$currentToolVersion' in '$versionsManifest' must be a three-part numeric version such as '1.2.3' to be bumped automatically."
+}
+$newToolVersion = '{0}.{1}.{2}' -f $versionMatch.Groups[1].Value, $versionMatch.Groups[2].Value, ([int]$versionMatch.Groups[3].Value + 1)
 
 Write-Output "  Tool version: $currentToolVersion -> $newToolVersion"
 
-# Update the ToolVersion default in Build-BundledModules.ps1.
-$updatedBuildContent = $updatedBuildContent -replace "(\[string\]\`$ToolVersion\s*=\s*')[^']+(')", "`${1}$newToolVersion`${2}"
-
-# Update the Version in the Configuration block of Build-BundledModules.ps1.
-# Match the specific line: Version = 'x.y.z' inside $script:Configuration
-$updatedBuildContent = [regex]::Replace(
-    $updatedBuildContent,
-    "(?<=\`$script:Configuration\s*=\s*\[ordered\]@\{[\s\S]*?^\s*Version\s*=\s*')[^']+(?=')",
-    $newToolVersion,
-    [System.Text.RegularExpressions.RegexOptions]::Multiline
-)
-
-# Update header Version comment line in Build-BundledModules.ps1.
-$updatedBuildContent = $updatedBuildContent -replace '(?m)^(Version:\s+)\S+', "`${1}$newToolVersion"
-
-# Update Last Updated Date in Build-BundledModules.ps1 header.
 $todayDate = (Get-Date).ToString('yyyy-MM-dd')
-$updatedBuildContent = $updatedBuildContent -replace '(?m)^(Last Updated Date:\s+)\S+', "`${1}$todayDate"
+$scriptContent = @{
+    build = $updatedBuildContent
+    main  = Get-Content -LiteralPath $mainScript -Raw
+}
 
-Set-Content -LiteralPath $buildScript -Value $updatedBuildContent -NoNewline -Encoding UTF8
+foreach ($site in $versionSites) {
+    $scriptContent[$site.Script] = Set-VersionToken -Content $scriptContent[$site.Script] -Pattern $site.Pattern -NewValue $newToolVersion -Description $site.Name
+}
+foreach ($site in $dateSites) {
+    $scriptContent[$site.Script] = Set-VersionToken -Content $scriptContent[$site.Script] -Pattern $site.Pattern -NewValue $todayDate -Description $site.Name
+}
 
-# Update version in ArmClient-PS.ps1 header comment and Configuration block.
-$mainContent = Get-Content -LiteralPath $mainScript -Raw
-
-# Update header Version comment line.
-$mainContent = $mainContent -replace '(?m)^(Version:\s+)\S+', "`${1}$newToolVersion"
-
-# Update Last Updated Date in ArmClient-PS.ps1 header.
-$mainContent = $mainContent -replace '(?m)^(Last Updated Date:\s+)\S+', "`${1}$todayDate"
-
-# Update Version in the $script:Configuration block of ArmClient-PS.ps1.
-$mainContent = [regex]::Replace(
-    $mainContent,
-    "(?<=\`$script:Configuration\s*=\s*\[ordered\]@\{[\s\S]*?^\s*Version\s*=\s*')[^']+(?=')",
-    $newToolVersion,
-    [System.Text.RegularExpressions.RegexOptions]::Multiline
-)
-
-Set-Content -LiteralPath $mainScript -Value $mainContent -NoNewline -Encoding UTF8
+Set-Content -LiteralPath $buildScript -Value $scriptContent['build'] -NoNewline -Encoding UTF8
+Set-Content -LiteralPath $mainScript -Value $scriptContent['main'] -NoNewline -Encoding UTF8
 
 # ---------------------------------------------------------------------------
 # 4. Run the build to regenerate modules and manifests
@@ -239,7 +295,33 @@ Write-Output ''
 Write-Output '=== Build completed successfully. ==='
 
 # ---------------------------------------------------------------------------
-# 5. Output summary for the workflow
+# 5. Assert every version site agrees before the workflow may commit
+# ---------------------------------------------------------------------------
+# has_updates=true is what authorizes the commit and push steps, so a bump that
+# only partially landed has to fail here rather than reach the default branch.
+Write-Output ''
+Write-Output '--- Verifying version consistency ---'
+
+$verifiedContent = @{
+    build = Get-Content -LiteralPath $buildScript -Raw
+    main  = Get-Content -LiteralPath $mainScript -Raw
+}
+$observedVersions = [ordered]@{
+    'Manifest/Versions.json tool.version' = [string](Get-Content -LiteralPath $versionsManifest -Raw | ConvertFrom-Json).tool.version
+}
+foreach ($site in $versionSites) {
+    $observedVersions[$site.Name] = Get-VersionToken -Content $verifiedContent[$site.Script] -Pattern $site.Pattern -Description $site.Name
+}
+
+$driftedSites = @($observedVersions.GetEnumerator() | Where-Object { $_.Value -cne $newToolVersion })
+if ($driftedSites.Count -gt 0) {
+    $detail = ($observedVersions.GetEnumerator() | ForEach-Object { "$($_.Key)='$($_.Value)'" }) -join '; '
+    throw "Version bump did not land consistently. Expected '$newToolVersion' at every site but observed: $detail"
+}
+Write-Output "  Confirmed '$newToolVersion' at $($observedVersions.Count) version sites."
+
+# ---------------------------------------------------------------------------
+# 6. Output summary for the workflow
 # ---------------------------------------------------------------------------
 $summaryParts = @()
 foreach ($update in $updates) {
@@ -247,11 +329,9 @@ foreach ($update in $updates) {
 }
 $commitSummary = $summaryParts -join ', '
 
-if ($env:GITHUB_OUTPUT) {
-    Add-Content -LiteralPath $env:GITHUB_OUTPUT -Value 'has_updates=true'
-    Add-Content -LiteralPath $env:GITHUB_OUTPUT -Value "commit_summary=$commitSummary"
-    Add-Content -LiteralPath $env:GITHUB_OUTPUT -Value "new_tool_version=$newToolVersion"
-}
+Write-GitHubOutput -Name 'has_updates' -Value 'true'
+Write-GitHubOutput -Name 'commit_summary' -Value $commitSummary
+Write-GitHubOutput -Name 'new_tool_version' -Value $newToolVersion
 
 Write-Output "Updates applied: $commitSummary"
 Write-Output "New tool version: $newToolVersion"

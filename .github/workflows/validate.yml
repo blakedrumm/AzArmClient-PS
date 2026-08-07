@@ -1,0 +1,156 @@
+# ───────────────────────────────────────────────────────────────────────────────
+# Validate Package Integrity
+# ───────────────────────────────────────────────────────────────────────────────
+# Pre-merge gate. update-bundled-modules.yml only validates on days a module
+# upgrade exists, and release.yml only runs on dispatch, so without this workflow
+# a hand edit that leaves Manifest/Files.sha256.json stale can sit on the default
+# branch indefinitely and break the tool at startup for every consumer.
+#
+# Modules/ is committed, so this never contacts PSGallery.
+# ───────────────────────────────────────────────────────────────────────────────
+
+name: Validate Package Integrity
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: Verify versions, file hashes, and self-test
+    runs-on: windows-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - name: Verify tool version consistency across all sites
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+
+          # Deliberately re-implemented rather than shared with
+          # Update-BundledModules.ps1: this gate exists to catch defects in that
+          # script's own version writing, so it must not depend on its anchors.
+          $versionsManifest = Get-Content -LiteralPath 'Manifest/Versions.json' -Raw | ConvertFrom-Json
+          $canonicalVersion = [string]$versionsManifest.tool.version
+          if ([string]::IsNullOrWhiteSpace($canonicalVersion)) {
+              throw "Manifest/Versions.json is missing 'tool.version'."
+          }
+          Write-Output "Canonical version (Manifest/Versions.json): $canonicalVersion"
+
+          $sites = @(
+            @{ Name = "ArmClient-PS.ps1 header 'Version:' line";                File = 'ArmClient-PS.ps1';         Pattern = "(?m)^Version:[ \t]+(?<value>\S+)" }
+            @{ Name = 'ArmClient-PS.ps1 $script:Configuration.Version';         File = 'ArmClient-PS.ps1';         Pattern = "(?m)\`$script:Configuration\s*=\s*\[ordered\]@\{[\s\S]*?^\s*Version\s*=\s*'(?<value>[^']+)'" }
+            @{ Name = "Build-BundledModules.ps1 header 'Version:' line";        File = 'Build-BundledModules.ps1'; Pattern = "(?m)^Version:[ \t]+(?<value>\S+)" }
+            @{ Name = 'Build-BundledModules.ps1 $script:Configuration.Version'; File = 'Build-BundledModules.ps1'; Pattern = "(?m)\`$script:Configuration\s*=\s*\[ordered\]@\{[\s\S]*?^\s*Version\s*=\s*'(?<value>[^']+)'" }
+            @{ Name = 'Build-BundledModules.ps1 -ToolVersion default';          File = 'Build-BundledModules.ps1'; Pattern = "\[string\]\`$ToolVersion\s*=\s*'(?<value>[^']+)'" }
+          )
+
+          $problems = [Collections.Generic.List[string]]::new()
+          foreach ($site in $sites) {
+              $content = Get-Content -LiteralPath $site.File -Raw
+              $found = [regex]::Matches($content, $site.Pattern)
+              if ($found.Count -ne 1) {
+                  $problems.Add("Expected exactly one '$($site.Name)' site in '$($site.File)' but found $($found.Count). Update the version site or the checks in validate.yml.")
+                  continue
+              }
+              $value = $found[0].Groups['value'].Value
+              if ($value -cne $canonicalVersion) {
+                  $problems.Add("Version mismatch at $($site.Name): found '$value', expected '$canonicalVersion'. Fix: re-run Build-BundledModules.ps1 -ToolVersion $canonicalVersion and commit the regenerated package.")
+              }
+              else {
+                  Write-Output "OK  $($site.Name) = $value"
+              }
+          }
+
+          if ($problems.Count -gt 0) {
+              foreach ($problem in $problems) { Write-Output "::error::$problem" }
+              throw "Found $($problems.Count) tool-version problem(s). See the error annotations above."
+          }
+          Write-Output "All $($sites.Count) version sites agree with Manifest/Versions.json."
+
+      - name: Verify Files.sha256.json against every covered file
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $textFileExtensions = @('.ps1', '.psm1', '.psd1', '.ps1xml', '.json', '.txt', '.xml')
+
+          function Get-NormalizedFileHash {
+              param([string]$LiteralPath, [string]$Algorithm = 'SHA256')
+              $extension = [IO.Path]::GetExtension($LiteralPath).ToLowerInvariant()
+              if ($textFileExtensions -contains $extension) {
+                  # Same CRLF-to-LF normalization Build-BundledModules.ps1 and
+                  # ArmClient-PS.ps1 use, so results are comparable on any host.
+                  $bytes = [IO.File]::ReadAllBytes($LiteralPath)
+                  $normalized = [Collections.Generic.List[byte]]::new($bytes.Length)
+                  for ($i = 0; $i -lt $bytes.Length; $i++) {
+                      if ($bytes[$i] -eq 0x0D -and ($i + 1) -lt $bytes.Length -and $bytes[$i + 1] -eq 0x0A) { continue }
+                      $normalized.Add($bytes[$i])
+                  }
+                  $hashImpl = [Security.Cryptography.HashAlgorithm]::Create($Algorithm)
+                  try { $hashBytes = $hashImpl.ComputeHash($normalized.ToArray()) } finally { $hashImpl.Dispose() }
+                  return ([BitConverter]::ToString($hashBytes).Replace('-', '')).ToUpperInvariant()
+              }
+              (Get-FileHash -LiteralPath $LiteralPath -Algorithm $Algorithm).Hash.ToUpperInvariant()
+          }
+
+          $manifestPath = 'Manifest/Files.sha256.json'
+          $entries = @((Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json).files)
+          if ($entries.Count -lt 1) {
+              throw "$manifestPath contains no file entries. Re-run Build-BundledModules.ps1 before committing."
+          }
+
+          $problems = [Collections.Generic.List[string]]::new()
+          foreach ($entry in $entries) {
+              $relativePath = [string]$entry.path
+              if (-not (Test-Path -LiteralPath $relativePath -PathType Leaf)) {
+                  $problems.Add("'$relativePath' is listed in $manifestPath but is missing from the repository. Fix: re-run Build-BundledModules.ps1, or restore the file.")
+                  continue
+              }
+              $algorithm = if ($entry.algorithm) { [string]$entry.algorithm } else { 'SHA256' }
+              $actual = Get-NormalizedFileHash -LiteralPath $relativePath -Algorithm $algorithm
+              $expected = ([string]$entry.hash).ToUpperInvariant()
+              if ($actual -ne $expected) {
+                  $problems.Add("Hash mismatch for '$relativePath': manifest expects '$expected' but the file hashes to '$actual'. Fix: re-run Build-BundledModules.ps1 and commit the regenerated Manifest/Files.sha256.json alongside the change.")
+              }
+          }
+
+          if ($problems.Count -gt 0) {
+              foreach ($problem in $problems) { Write-Output "::error::$problem" }
+              throw "Found $($problems.Count) hash problem(s) across $($entries.Count) manifest entries. See the error annotations above."
+          }
+          Write-Output "Validated $($entries.Count) file hash entries in $manifestPath."
+
+      - name: Run bundled-module self-test
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+
+          # The self-test reports per-check booleans and only throws for hash or
+          # path failures, so assert on the emitted JSON rather than the exit code.
+          $selfTestOutput = & '.\ArmClient-PS.ps1' -SelfTest -PreferBundledModules | Out-String
+          if ($LASTEXITCODE -ne 0) { throw 'The bundled-module self-test failed.' }
+
+          $selfTestResults = @($selfTestOutput | ConvertFrom-Json)
+          if ($selfTestResults.Count -eq 0) {
+              throw "The self-test produced no results. Raw output: $selfTestOutput"
+          }
+
+          # The runner has no Azure sign-in, so this is the only tolerated false result.
+          $failedChecks = @(
+              $selfTestResults |
+                  Where-Object { $_.Result -ne $true -and $_.Test -ne 'CurrentAzContextAvailable' }
+          )
+          if ($failedChecks.Count -gt 0) {
+              foreach ($check in $failedChecks) {
+                  Write-Output "::error::Self-test check '$($check.Test)' failed for target '$($check.Target)'."
+              }
+              throw "The bundled-module self-test reported $($failedChecks.Count) failing check(s)."
+          }
+          Write-Output "Self-test passed $($selfTestResults.Count) checks."

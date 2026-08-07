@@ -20,13 +20,21 @@ on:
     - cron: '0 6 * * *'
   workflow_dispatch:   # Allow manual trigger from the Actions tab
 
-permissions:
-  contents: write      # Required to push commits
+permissions: {}
+
+concurrency:
+  # A scheduled run and a manual run must never race to push the same branch.
+  group: AzArmClient-PS-update-bundled-modules
+  cancel-in-progress: false
 
 jobs:
   check-and-update:
     name: Check for module updates
     runs-on: windows-latest   # Windows required for Save-Module / Save-PSResource compatibility
+    # Forks inherit the cron schedule; only the upstream repository should publish.
+    if: github.event_name != 'schedule' || github.repository == 'blakedrumm/AzArmClient-PS'
+    permissions:
+      contents: write      # Required to push commits
     outputs:
       has_updates: ${{ steps.update.outputs.has_updates }}
       commit_summary: ${{ steps.update.outputs.commit_summary }}
@@ -35,7 +43,7 @@ jobs:
     steps:
 
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
@@ -72,15 +80,30 @@ jobs:
         id: commit
         if: steps.update.outputs.has_updates == 'true'
         shell: pwsh
+        env:
+          # Read through the environment, never interpolated into this script:
+          # commit_summary is built from PowerShell Gallery metadata and would
+          # otherwise be parsed as PowerShell source inside a double-quoted string.
+          UPDATE_SUMMARY: ${{ steps.update.outputs.commit_summary }}
+          NEW_TOOL_VERSION: ${{ steps.update.outputs.new_tool_version }}
         run: |
+          $ErrorActionPreference = 'Stop'
+          $summary = ([string]$env:UPDATE_SUMMARY).Trim()
+          $version = ([string]$env:NEW_TOOL_VERSION).Trim()
+          if ([string]::IsNullOrWhiteSpace($summary) -or $summary -match '[\x00-\x1F\x7F]') {
+              throw 'The update summary is empty or contains control characters.'
+          }
+          if ($version -notmatch '^\d+\.\d+\.\d+$') {
+              throw "The new tool version '$version' is not a three-part numeric version."
+          }
+
           git config user.name  "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
           git add --all
-          $summary = "${{ steps.update.outputs.commit_summary }}"
-          $version = "${{ steps.update.outputs.new_tool_version }}"
           git commit -m "chore: update bundled modules ($summary) [v$version]"
-          "release_ref=$(git rev-parse HEAD)" >> $env:GITHUB_OUTPUT
+          if ($LASTEXITCODE -ne 0) { throw 'Unable to create the update commit.' }
+          "release_ref=$((git rev-parse HEAD).Trim())" >> $env:GITHUB_OUTPUT
 
       - name: Validate committed package
         if: steps.update.outputs.has_updates == 'true'
@@ -97,18 +120,42 @@ jobs:
               throw "Unable to archive commit HEAD for package validation."
           }
           Expand-Archive -LiteralPath $archivePath -DestinationPath $validationRoot
-          & (Join-Path $validationRoot 'ArmClient-PS.ps1') -SelfTest -PreferBundledModules
+
+          # The self-test reports per-check booleans and only throws for hash or
+          # path failures, so assert on the emitted JSON rather than the exit code.
+          $selfTestOutput = & (Join-Path $validationRoot 'ArmClient-PS.ps1') -SelfTest -PreferBundledModules | Out-String
+          if ($LASTEXITCODE -ne 0) { throw 'The committed package failed its self-test.' }
+
+          $selfTestResults = @($selfTestOutput | ConvertFrom-Json)
+          if ($selfTestResults.Count -eq 0) {
+              throw "The self-test produced no results. Raw output: $selfTestOutput"
+          }
+
+          # The runner has no Azure sign-in, so this is the only tolerated false result.
+          $failedChecks = @(
+              $selfTestResults |
+                  Where-Object { $_.Result -ne $true -and $_.Test -ne 'CurrentAzContextAvailable' }
+          )
+          if ($failedChecks.Count -gt 0) {
+              throw "The committed package failed its self-test: $($failedChecks | ConvertTo-Json -Depth 10 -Compress)"
+          }
 
       - name: Push validated update
         if: steps.update.outputs.has_updates == 'true'
         shell: pwsh
         run: |
+          $ErrorActionPreference = 'Stop'
           git push
+          if ($LASTEXITCODE -ne 0) {
+              throw 'Unable to push the validated update. The default branch moved during this run; re-run the workflow.'
+          }
 
   release-update:
     name: Release updated bundle
     needs: check-and-update
     if: needs.check-and-update.outputs.has_updates == 'true'
+    permissions:
+      contents: write
     uses: ./.github/workflows/release.yml
     with:
       ref: ${{ needs.check-and-update.outputs.release_ref }}
@@ -116,4 +163,10 @@ jobs:
       additions: "Updated bundled modules: ${{ needs.check-and-update.outputs.commit_summary }}."
       upload_sftp: ${{ vars.SFTP_ENABLED == 'true' }}
       prerelease: false
-    secrets: inherit
+    secrets:
+      SFTP_HOST: ${{ secrets.SFTP_HOST }}
+      SFTP_PORT: ${{ secrets.SFTP_PORT }}
+      SFTP_USERNAME: ${{ secrets.SFTP_USERNAME }}
+      SFTP_PRIVATE_KEY: ${{ secrets.SFTP_PRIVATE_KEY }}
+      SFTP_KNOWN_HOSTS: ${{ secrets.SFTP_KNOWN_HOSTS }}
+      SFTP_REMOTE_DIRECTORY: ${{ secrets.SFTP_REMOTE_DIRECTORY }}
