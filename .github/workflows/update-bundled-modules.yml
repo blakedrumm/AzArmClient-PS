@@ -122,9 +122,10 @@ jobs:
           Expand-Archive -LiteralPath $archivePath -DestinationPath $validationRoot
 
           # The self-test reports per-check booleans and only throws for hash or
-          # path failures, so assert on the emitted JSON rather than the exit code.
+          # path failures, so assert on the emitted JSON. Do not test $LASTEXITCODE here:
+          # a PowerShell script that returns normally never sets it, so the check would
+          # read the value left by the git command above instead of the self-test result.
           $selfTestOutput = & (Join-Path $validationRoot 'ArmClient-PS.ps1') -SelfTest -PreferBundledModules | Out-String
-          if ($LASTEXITCODE -ne 0) { throw 'The committed package failed its self-test.' }
 
           $selfTestResults = @($selfTestOutput | ConvertFrom-Json)
           if ($selfTestResults.Count -eq 0) {

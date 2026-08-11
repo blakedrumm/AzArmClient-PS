@@ -133,9 +133,10 @@ jobs:
           $ErrorActionPreference = 'Stop'
 
           # The self-test reports per-check booleans and only throws for hash or
-          # path failures, so assert on the emitted JSON rather than the exit code.
+          # path failures, so assert on the emitted JSON. Do not test $LASTEXITCODE here:
+          # a PowerShell script that returns normally never sets it, so the check would
+          # read a stale or null value and fail the step on a passing run.
           $selfTestOutput = & '.\ArmClient-PS.ps1' -SelfTest -PreferBundledModules | Out-String
-          if ($LASTEXITCODE -ne 0) { throw 'The bundled-module self-test failed.' }
 
           $selfTestResults = @($selfTestOutput | ConvertFrom-Json)
           if ($selfTestResults.Count -eq 0) {

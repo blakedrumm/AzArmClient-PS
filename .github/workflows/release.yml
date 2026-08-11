@@ -182,10 +182,9 @@ jobs:
           # hash or path failures, so the exit code alone would let a false result
           # ship. Parse the emitted JSON and assert on it. Progress lines go to the
           # host stream, so the success stream is the JSON document by itself.
+          # Do not test $LASTEXITCODE here: a PowerShell script that returns normally
+          # never sets it, so the check would read the value left by git archive above.
           $selfTestOutput = & $packagedScript -SelfTest -PreferBundledModules | Out-String
-          if ($LASTEXITCODE -ne 0) {
-              throw 'The extracted release package failed its self-test.'
-          }
 
           $selfTestResults = @($selfTestOutput | ConvertFrom-Json)
           if ($selfTestResults.Count -eq 0) {

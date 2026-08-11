@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/armclient-ps-logo.png" alt="ArmClient-PS logo" width="180" height="180">
+</p>
+
 # ArmClient-PS
 
 ArmClient-PS is a single-script Azure Resource Manager support tool designed for redistribution.
