@@ -10,7 +10,7 @@ versions, optionally signs tool-owned scripts, and generates Manifest\Versions.j
 Script Name: Build-BundledModules.ps1
 Description: Maintainer build script for bundled Az module packaging.
 Author: Blake Drumm (blakedrumm@microsoft.com)
-Version: 1.0.7
+Version: 1.1.0
 Created Date: 2026-04-03
 Last Updated Date: 2026-08-07
 Requirements: Windows PowerShell 5.1 or PowerShell 7.x, internet access for maintainer builds, Save-PSResource preferred.
@@ -18,7 +18,7 @@ Notes: Runtime downloads are intentionally disallowed in ArmClient-PS.ps1. This 
 #>
 [CmdletBinding()]
 param(
-    [Parameter()][ValidateNotNullOrEmpty()][string]$ToolVersion='1.0.7',
+    [Parameter()][ValidateNotNullOrEmpty()][string]$ToolVersion='1.1.0',
     [Parameter()][switch]$Clean,
     [Parameter()][string]$OutputRoot,
     [Parameter()][string]$ModulesPath,
@@ -43,9 +43,10 @@ if ([Net.ServicePointManager]::SecurityProtocol -band [Net.SecurityProtocolType]
 $script:Configuration = [ordered]@{
     ScriptName                = 'Build-BundledModules.ps1'
     ToolScriptName            = 'ArmClient-PS.ps1'
+    GuiScriptName             = 'ArmClient-PS.Gui.ps1'
     ToolName                  = 'ArmClient-PS'
     Author                    = 'Blake Drumm (blakedrumm@microsoft.com)'
-    Version                   = '1.0.7'
+    Version                   = '1.1.0'
     DefaultModulesFolderName  = 'Modules'
     DefaultManifestFolderName = 'Manifest'
     DefaultLogsFolderName     = 'Logs'
@@ -267,7 +268,7 @@ function New-VersionManifest {
 function Get-ModuleFileInventory {
     [CmdletBinding()] param()
     $inventory = [Collections.Generic.List[object]]::new()
-    foreach ($rootFile in @((Join-Path $script:BuildState.OutputRoot $script:Configuration.ToolScriptName),(Join-Path $script:BuildState.OutputRoot $script:Configuration.ScriptName),(Join-Path $script:BuildState.ManifestPath $script:Configuration.VersionsManifestName))) {
+    foreach ($rootFile in @((Join-Path $script:BuildState.OutputRoot $script:Configuration.ToolScriptName),(Join-Path $script:BuildState.OutputRoot $script:Configuration.GuiScriptName),(Join-Path $script:BuildState.OutputRoot $script:Configuration.ScriptName),(Join-Path $script:BuildState.ManifestPath $script:Configuration.VersionsManifestName))) {
         if (Test-Path -LiteralPath $rootFile -PathType Leaf) { $inventory.Add([pscustomobject]@{ FullPath=$rootFile; RelativePath=(Get-RelativePathFromBase -BasePath $script:BuildState.OutputRoot -FullPath $rootFile).Replace('/','\') }) }
     }
     foreach ($moduleFile in @(Get-ChildItem -LiteralPath $script:BuildState.ModulesPath -Recurse -File)) { $inventory.Add([pscustomobject]@{ FullPath=$moduleFile.FullName; RelativePath=(Get-RelativePathFromBase -BasePath $script:BuildState.OutputRoot -FullPath $moduleFile.FullName).Replace('/','\') }) }

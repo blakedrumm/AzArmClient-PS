@@ -20,6 +20,7 @@ It recreates the core ARMClient workflow by using `Invoke-AzRestMethod` and a lo
 ```text
 .
 ├── ArmClient-PS.ps1
+├── ArmClient-PS.Gui.ps1
 ├── Build-BundledModules.ps1
 ├── Modules\
 ├── Manifest\
@@ -96,6 +97,45 @@ Run the built-in package self-test:
 ```powershell
 .\ArmClient-PS.ps1 -SelfTest
 ```
+
+## Graphical Interface
+
+`ArmClient-PS.Gui.ps1` is an optional WPF front end for the same tool. It calls `ArmClient-PS.ps1` for every
+request, so behavior, logging, redaction, and validation are identical to the command line.
+
+```powershell
+.\ArmClient-PS.Gui.ps1
+```
+
+It runs on Windows PowerShell 5.1 and PowerShell 7.x. A single-threaded apartment is required; the script
+relaunches itself in STA when it is started from an MTA host, so no special invocation is needed.
+
+What it provides:
+
+- **Operation catalog.** Verified presets grouped by service, plus every ARM operation your subscription
+  exposes once you select **Discover all**. Search filters by name, alias, category, or description.
+- **Only what I have deployed.** Hides resource types that do not exist in the current subscription.
+- **Guided parameters.** Lookups that can be resolved are offered as lists. Choosing a subscription fills the
+  resource group list, and choosing a resource group fills the resource list.
+- **Request modes.** Operation preset, relative ARM path, or absolute HTTPS URI.
+- **Parameter defaults.** Store a subscription, resource group, or any other value once and have it pre-fill
+  every operation. Saved defaults are encrypted for the current Windows account and validated against the
+  signed-in tenant.
+- **Tenant switching.** Switch directory without restarting. State that belonged to the previous tenant is
+  discarded rather than carried over.
+- **Documentation links.** Per-operation deep links to the Microsoft Learn REST reference, resolved at click
+  time and restricted to `learn.microsoft.com`.
+- **Response handling.** Status code, elapsed time, response headers, and a session activity log. Secrets are
+  redacted until **Reveal raw** is used.
+- **Copy as CLI.** Emits the equivalent `ArmClient-PS.ps1` command line for the request on screen.
+- **Getting started guide.** Shown on launch and reachable at any time from **Guide** in the toolbar.
+
+Paths for discovered operations are derived from ARM provider metadata. Where Microsoft publishes an exact URL
+for an operation the tool uses it and labels the request **DOCUMENTED PATH**; everything else is labelled
+**INFERRED PATH**, and a write or delete against an inferred path says so in its confirmation prompt.
+
+The GUI is a client only. It adds no new network destinations beyond Resource Manager for the selected cloud
+and `learn.microsoft.com` for documentation links.
 
 ## Azure Communication Services – Domain Verification
 
@@ -210,6 +250,8 @@ Optional signing flow:
 - Runtime hash validation is enabled by default. Every packaged file under `Modules\` must be listed in
   `Manifest\Files.sha256.json`; an added file that is not in the manifest fails the run, because Az modules
   dot-source everything in their `StartupScripts` and `PostImportScripts` folders.
+- `ArmClient-PS.Gui.ps1` is hash validated whenever it is present beside the script. Deleting it is supported
+  and leaves the command line fully functional; modifying it fails the run.
 - Manifest paths must stay inside the package folder. Rooted paths and `..` traversal are rejected.
 - Signature validation is available through `-EnforceSignatureValidation`.
 - Tokens and authorization headers are redacted from log output, including bare JWTs, SAS `sig` values, and PEM private keys.

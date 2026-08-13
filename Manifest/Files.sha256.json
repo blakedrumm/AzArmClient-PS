@@ -1,25 +1,31 @@
 {
   "schemaVersion": "1.0",
-  "generatedUtc": "2026-08-07T21:31:49.2176817Z",
+  "generatedUtc": "2026-08-13T02:03:26.0485045Z",
   "algorithm": "SHA256",
   "notes": "Files.sha256.json intentionally does not hash itself. Text-file hashes are computed after normalizing CRLF to LF for cross-platform consistency.",
   "files": [
     {
+      "path": "ArmClient-PS.Gui.ps1",
+      "algorithm": "SHA256",
+      "hash": "B2781C3E49FC47422442EA931A0F29A7D2CEF293A7F506EB6845F45D6AC80B5C",
+      "required": true
+    },
+    {
       "path": "ArmClient-PS.ps1",
       "algorithm": "SHA256",
-      "hash": "913B6E2C19C30F6E7C4B68037855AD483CD1172C687CE7641A6B8E05F9546214",
+      "hash": "719B02399D83185823ED2822196D7F47AAFBBB8EC675B095BBAB5F8DE2033BA7",
       "required": true
     },
     {
       "path": "Build-BundledModules.ps1",
       "algorithm": "SHA256",
-      "hash": "2E1ACBA02227B402747CDB24DEC51C36BEECC2EE6C9500128D043B0F7C5E8333",
+      "hash": "2D2EFCECC1151ED8BA01610F651819EBEB22097E3D495707654F041425C5AF7D",
       "required": true
     },
     {
       "path": "Manifest\\Versions.json",
       "algorithm": "SHA256",
-      "hash": "B2CDDA735264EA1BE9F9B04B711C0B591B4A87C5047C672512D25C6EB5C841F8",
+      "hash": "44F1D5D5B2E149559D3FE3E7D1C113F9DC3A7287C94205B9F95B46B5AD039EFF",
       "required": true
     },
     {

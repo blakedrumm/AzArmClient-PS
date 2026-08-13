@@ -170,7 +170,7 @@ jobs:
           # from the selected commit and placing them under one package folder.
           $archiveArgument = "--output=$archivePath"
           git archive --format=zip --prefix=AzArmClient-PS/ $archiveArgument $env:RELEASE_COMMIT -- `
-              ArmClient-PS.ps1 Build-BundledModules.ps1 LICENSE README.md Manifest Modules
+              ArmClient-PS.ps1 ArmClient-PS.Gui.ps1 Build-BundledModules.ps1 LICENSE README.md CHANGELOG.md Manifest Modules
           if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $archivePath -PathType Leaf)) {
               throw 'Unable to create AzArmClient-PS.zip from the selected commit.'
           }

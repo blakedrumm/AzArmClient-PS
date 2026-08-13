@@ -44,9 +44,9 @@ Maximum time to wait for a long-running operation to reach a terminal state. Use
 Script Name: ArmClient-PS.ps1
 Description: Secure ARM-focused REST support utility that uses bundled Az modules.
 Author: Blake Drumm (blakedrumm@microsoft.com)
-Version: 1.0.7
+Version: 1.1.0
 Created Date: 2026-04-03
-Last Updated Date: 2026-08-07
+Last Updated Date: 2026-08-12
 Requirements: Windows PowerShell 5.1 or PowerShell 7.x, bundled Az.Accounts module and dependencies.
 Environments: Supports all Azure cloud environments including AzureCloud, AzureUSGovernment, AzureChinaCloud,
               AzureUSNat, AzureUSSec, and custom environments registered with Add-AzEnvironment (e.g. Azure Stack).
@@ -104,8 +104,9 @@ if ([Net.ServicePointManager]::SecurityProtocol -band [Net.SecurityProtocolType]
 
 $script:Configuration = [ordered]@{
     ScriptName                   = 'ArmClient-PS.ps1'
+    GuiScriptName                = 'ArmClient-PS.Gui.ps1'
     ToolName                     = 'ArmClient-PS'
-    Version                      = '1.0.7'
+    Version                      = '1.1.0'
     Author                       = 'Blake Drumm (blakedrumm@microsoft.com)'
     RequiredRootModules          = @('Az.Accounts')
     SupportedBuiltInEnvironments = @('AzureCloud','AzureUSGovernment','AzureChinaCloud','AzureUSNat','AzureUSSec')
@@ -329,6 +330,9 @@ function Test-BundledModuleFiles {
     $paths = [Collections.Generic.List[string]]::new()
     $paths.Add($script:Configuration.ScriptName)
     $paths.Add('Build-BundledModules.ps1')
+    # The GUI ships in the same package and drives live credentials, so it is hash
+    # checked whenever present. Removing it stays allowed; altering it does not.
+    if (Test-Path -LiteralPath (Join-Path $script:SessionState.ScriptRoot $script:Configuration.GuiScriptName) -PathType Leaf) { $paths.Add($script:Configuration.GuiScriptName) }
     $paths.Add((Join-Path $script:Configuration.ManifestDirectoryName $script:Configuration.VersionsManifestName))
     $modulePrefix = ConvertTo-NormalizedDirectoryPrefix -Path $script:Configuration.ModulesDirectoryName
     $manifestModuleFiles = @{}
