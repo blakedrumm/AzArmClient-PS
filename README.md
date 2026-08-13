@@ -100,6 +100,8 @@ Run the built-in package self-test:
 
 ## Graphical Interface
 
+<img width="1346" height="873" alt="AzArmClient-GUI" src="https://github.com/user-attachments/assets/50c2a788-88c7-413c-84b2-4df7ff0bd117" />
+
 `ArmClient-PS.Gui.ps1` is an optional WPF front end for the same tool. It calls `ArmClient-PS.ps1` for every
 request, so behavior, logging, redaction, and validation are identical to the command line.
 
