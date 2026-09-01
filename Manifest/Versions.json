@@ -2,24 +2,24 @@
   "schemaVersion": "1.0",
   "tool": {
     "name": "ArmClient-PS",
-    "version": "1.1.0",
-    "builtUtc": "2026-08-13T02:03:25.9979114Z",
+    "version": "1.1.1",
+    "builtUtc": "2026-09-01T11:26:11.0361778Z",
     "author": "Blake Drumm (blakedrumm@microsoft.com)"
   },
   "requiredModules": [
     {
       "name": "Az.Accounts",
-      "pinnedVersion": "5.5.2",
+      "pinnedVersion": "5.5.3",
       "repository": "PSGallery"
     }
   ],
   "modules": [
     {
       "name": "Az.Accounts",
-      "version": "5.5.2",
+      "version": "5.5.3",
       "source": "Pinned",
-      "manifestPath": "Modules\\Az.Accounts\\5.5.2\\Az.Accounts.psd1",
-      "moduleBase": "Modules\\Az.Accounts\\5.5.2",
+      "manifestPath": "Modules\\Az.Accounts\\5.5.3\\Az.Accounts.psd1",
+      "moduleBase": "Modules\\Az.Accounts\\5.5.3",
       "requiredModules": []
     }
   ]
